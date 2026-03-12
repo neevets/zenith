@@ -1,10 +1,8 @@
 <div align="center">
   <img src="https://files.catbox.moe/lugi09.png" width="200" alt="Zenith Logo">
+  <p><a href="https://zenithlang.vercel.app">zenithlang.vercel.app</a></p>
   <h1>Zenith: The Modern PHP Runtime</h1>
-  <p><strong>Official Site</strong>: <a href="https://zenithlang.vercel.app">zenithlang.vercel.app</a></p>
-</div>
-
-Zenith is a reimagined PHP experience. It's fast, secure, and built for the modern cloud.
+  </div>
 
 ## Features
 - **Quantum Shield**: Predictive type safety that validates SQL queries at compile-time.
