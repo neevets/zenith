@@ -36,6 +36,7 @@ type FunctionDefinition struct {
 	IsRender   bool
 	Name       *Identifier
 	Parameters []*Parameter
+	ReturnType string
 	Body       *BlockStatement
 }
 
@@ -53,6 +54,7 @@ func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
 type LetStatement struct {
 	Token lexer.Token
 	Name  *Variable
+	Type  string
 	Value Expression
 }
 
@@ -106,9 +108,9 @@ func (v *Variable) expressionNode()      {}
 func (v *Variable) TokenLiteral() string { return v.Token.Literal }
 
 type StringLiteral struct {
-	Token    lexer.Token
-	Value    string
-	IsRender bool
+	Token     lexer.Token
+	Value     string
+	IsRender  bool
 	Delimiter byte
 }
 
@@ -216,6 +218,75 @@ type WhileStatement struct {
 
 func (ws *WhileStatement) statementNode()       {}
 func (ws *WhileStatement) TokenLiteral() string { return ws.Token.Literal }
+
+type ForStatement struct {
+	Token     lexer.Token
+	Init      Statement
+	Condition Expression
+	Post      Expression
+	Body      *BlockStatement
+}
+
+func (fs *ForStatement) statementNode()       {}
+func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
+
+type ForeachStatement struct {
+	Token    lexer.Token
+	Iterable Expression
+	Item     *Variable
+	Body     *BlockStatement
+}
+
+func (fs *ForeachStatement) statementNode()       {}
+func (fs *ForeachStatement) TokenLiteral() string { return fs.Token.Literal }
+
+type BreakStatement struct {
+	Token lexer.Token
+}
+
+func (bs *BreakStatement) statementNode()       {}
+func (bs *BreakStatement) TokenLiteral() string { return bs.Token.Literal }
+
+type ContinueStatement struct {
+	Token lexer.Token
+}
+
+func (cs *ContinueStatement) statementNode()       {}
+func (cs *ContinueStatement) TokenLiteral() string { return cs.Token.Literal }
+
+type StructDefinition struct {
+	Token   lexer.Token
+	Name    *Identifier
+	Fields  []*Parameter
+	Methods []*FunctionDefinition
+}
+
+func (sd *StructDefinition) statementNode()       {}
+func (sd *StructDefinition) TokenLiteral() string { return sd.Token.Literal }
+
+type EnumDefinition struct {
+	Token  lexer.Token
+	Name   *Identifier
+	Values []string
+}
+
+func (ed *EnumDefinition) statementNode()       {}
+func (ed *EnumDefinition) TokenLiteral() string { return ed.Token.Literal }
+
+type MatchExpression struct {
+	Token   lexer.Token
+	Target  Expression
+	Arms    []*MatchArm
+	Default Expression
+}
+
+func (me *MatchExpression) expressionNode()      {}
+func (me *MatchExpression) TokenLiteral() string { return me.Token.Literal }
+
+type MatchArm struct {
+	Pattern string
+	Value   Expression
+}
 
 type AssignExpression struct {
 	Token lexer.Token

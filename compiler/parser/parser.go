@@ -2,9 +2,9 @@ package parser
 
 import (
 	"fmt"
-	"strings"
-	"strconv"
 	"github.com/neevets/zenith/compiler/lexer"
+	"strconv"
+	"strings"
 )
 
 type Parser struct {
@@ -89,9 +89,38 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseIfStatement()
 	case lexer.TOKEN_WHILE:
 		return p.parseWhileStatement()
+	case lexer.TOKEN_FOR:
+		return p.parseForStatement()
+	case lexer.TOKEN_FOREACH:
+		return p.parseForeachStatement()
+	case lexer.TOKEN_BREAK:
+		return &BreakStatement{Token: p.curToken}
+	case lexer.TOKEN_CONTINUE:
+		return &ContinueStatement{Token: p.curToken}
+	case lexer.TOKEN_STRUCT:
+		return p.parseStructDefinition()
+	case lexer.TOKEN_ENUM:
+		return p.parseEnumDefinition()
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parseTypeExpression() string {
+	parts := []string{}
+	if p.curToken.Type != lexer.TOKEN_IDENT && p.curToken.Type != lexer.TOKEN_STRING {
+		return ""
+	}
+	parts = append(parts, p.curToken.Literal)
+	for p.peekTokenIs(lexer.TOKEN_PIPE) {
+		p.nextToken()
+		p.nextToken()
+		if p.curToken.Type != lexer.TOKEN_IDENT && p.curToken.Type != lexer.TOKEN_STRING {
+			return strings.Join(parts, "|")
+		}
+		parts = append(parts, p.curToken.Literal)
+	}
+	return strings.Join(parts, "|")
 }
 
 func (p *Parser) parseIfStatement() *IfStatement {
@@ -152,8 +181,13 @@ func (p *Parser) parseWhileStatement() *WhileStatement {
 
 func (p *Parser) parseLetStatement() *LetStatement {
 	stmt := &LetStatement{Token: p.curToken}
+	p.nextToken()
+	if p.curToken.Type == lexer.TOKEN_IDENT || p.curToken.Type == lexer.TOKEN_STRING {
+		stmt.Type = p.parseTypeExpression()
+		p.nextToken()
+	}
 
-	if !p.expectPeek(lexer.TOKEN_VAR) {
+	if !p.curTokenIs(lexer.TOKEN_VAR) {
 		return nil
 	}
 
@@ -162,9 +196,9 @@ func (p *Parser) parseLetStatement() *LetStatement {
 	if !p.expectPeek(lexer.TOKEN_ASSIGN) {
 		return nil
 	}
-	
+
 	p.nextToken()
-	
+
 	stmt.Value = p.ParseExpression(LOWEST)
 
 	if p.peekTokenIs(lexer.TOKEN_SEMICOLON) {
@@ -176,7 +210,7 @@ func (p *Parser) parseLetStatement() *LetStatement {
 
 func (p *Parser) parseFunctionDefinition(isRender bool) Statement {
 	stmt := &FunctionDefinition{Token: p.curToken, IsRender: isRender}
-	
+
 	oldIsRender := p.isRender
 	p.isRender = isRender
 	defer func() { p.isRender = oldIsRender }()
@@ -198,6 +232,12 @@ func (p *Parser) parseFunctionDefinition(isRender bool) Statement {
 	}
 
 	stmt.Parameters = p.parseParameters()
+
+	if p.peekTokenIs(lexer.TOKEN_COLON) {
+		p.nextToken()
+		p.nextToken()
+		stmt.ReturnType = p.parseTypeExpression()
+	}
 
 	if !p.expectPeek(lexer.TOKEN_LBRACE) {
 		return nil
@@ -236,7 +276,7 @@ func (p *Parser) parseParameters() []*Parameter {
 func (p *Parser) parseParameter() *Parameter {
 	param := &Parameter{}
 	if p.curToken.Type == lexer.TOKEN_STRING || p.curToken.Type == lexer.TOKEN_IDENT {
-		param.Type = p.curToken.Literal
+		param.Type = p.parseTypeExpression()
 		if !p.expectPeek(lexer.TOKEN_VAR) {
 			return nil
 		}
@@ -247,6 +287,117 @@ func (p *Parser) parseParameter() *Parameter {
 		param.IsVar = true
 	}
 	return param
+}
+
+func (p *Parser) parseForStatement() *ForStatement {
+	stmt := &ForStatement{Token: p.curToken}
+	if !p.expectPeek(lexer.TOKEN_LPAREN) {
+		return nil
+	}
+	p.nextToken()
+	if !p.curTokenIs(lexer.TOKEN_SEMICOLON) {
+		if p.curTokenIs(lexer.TOKEN_LET) {
+			stmt.Init = p.parseLetStatement()
+		} else {
+			stmt.Init = p.parseExpressionStatement()
+		}
+	}
+	if !p.curTokenIs(lexer.TOKEN_SEMICOLON) {
+		for !p.curTokenIs(lexer.TOKEN_SEMICOLON) && !p.curTokenIs(lexer.TOKEN_EOF) {
+			p.nextToken()
+		}
+	}
+	p.nextToken()
+	if !p.curTokenIs(lexer.TOKEN_SEMICOLON) {
+		stmt.Condition = p.ParseExpression(LOWEST)
+	}
+	if !p.expectPeek(lexer.TOKEN_SEMICOLON) {
+		return nil
+	}
+	p.nextToken()
+	if !p.curTokenIs(lexer.TOKEN_RPAREN) {
+		stmt.Post = p.ParseExpression(LOWEST)
+	}
+	if !p.expectPeek(lexer.TOKEN_RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseForeachStatement() *ForeachStatement {
+	stmt := &ForeachStatement{Token: p.curToken}
+	if !p.expectPeek(lexer.TOKEN_LPAREN) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Iterable = p.ParseExpression(LOWEST)
+	if !p.expectPeek(lexer.TOKEN_AS) {
+		return nil
+	}
+	if !p.expectPeek(lexer.TOKEN_VAR) {
+		return nil
+	}
+	stmt.Item = &Variable{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(lexer.TOKEN_RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseStructDefinition() *StructDefinition {
+	stmt := &StructDefinition{Token: p.curToken, Fields: []*Parameter{}, Methods: []*FunctionDefinition{}}
+	if !p.expectPeek(lexer.TOKEN_IDENT) {
+		return nil
+	}
+	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(lexer.TOKEN_RBRACE) && !p.curTokenIs(lexer.TOKEN_EOF) {
+		if p.curTokenIs(lexer.TOKEN_FUNCTION) {
+			if fn, ok := p.parseFunctionDefinition(false).(*FunctionDefinition); ok {
+				stmt.Methods = append(stmt.Methods, fn)
+			}
+		} else {
+			field := p.parseParameter()
+			if field != nil {
+				stmt.Fields = append(stmt.Fields, field)
+			}
+			if p.peekTokenIs(lexer.TOKEN_SEMICOLON) {
+				p.nextToken()
+			}
+		}
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseEnumDefinition() *EnumDefinition {
+	stmt := &EnumDefinition{Token: p.curToken, Values: []string{}}
+	if !p.expectPeek(lexer.TOKEN_IDENT) {
+		return nil
+	}
+	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(lexer.TOKEN_RBRACE) && !p.curTokenIs(lexer.TOKEN_EOF) {
+		if p.curTokenIs(lexer.TOKEN_IDENT) {
+			stmt.Values = append(stmt.Values, p.curToken.Literal)
+		}
+		p.nextToken()
+	}
+	return stmt
 }
 
 func (p *Parser) parseIntegerLiteral() Expression {
@@ -352,6 +503,8 @@ func (p *Parser) ParseExpression(precedence int) Expression {
 		leftExp = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
 	case lexer.TOKEN_LBRACKET:
 		leftExp = p.parseArrayLiteral()
+	case lexer.TOKEN_MATCH:
+		leftExp = p.parseMatchExpression()
 	}
 
 	if leftExp == nil {
@@ -384,6 +537,44 @@ func (p *Parser) ParseExpression(precedence int) Expression {
 	}
 
 	return leftExp
+}
+
+func (p *Parser) parseMatchExpression() Expression {
+	exp := &MatchExpression{Token: p.curToken, Arms: []*MatchArm{}}
+	if !p.expectPeek(lexer.TOKEN_LPAREN) {
+		return nil
+	}
+	p.nextToken()
+	exp.Target = p.ParseExpression(LOWEST)
+	if !p.expectPeek(lexer.TOKEN_RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(lexer.TOKEN_RBRACE) && !p.curTokenIs(lexer.TOKEN_EOF) {
+		if p.curTokenIs(lexer.TOKEN_IDENT) && p.curToken.Literal == "default" {
+			if !p.expectPeek(lexer.TOKEN_COLON) {
+				return nil
+			}
+			p.nextToken()
+			exp.Default = p.ParseExpression(LOWEST)
+		} else if p.curTokenIs(lexer.TOKEN_IDENT) || p.curTokenIs(lexer.TOKEN_LITERAL) || p.curTokenIs(lexer.TOKEN_INT) {
+			pattern := p.curToken.Literal
+			if !p.expectPeek(lexer.TOKEN_COLON) {
+				return nil
+			}
+			p.nextToken()
+			arm := &MatchArm{Pattern: pattern, Value: p.ParseExpression(LOWEST)}
+			exp.Arms = append(exp.Arms, arm)
+		}
+		if p.peekTokenIs(lexer.TOKEN_COMMA) {
+			p.nextToken()
+		}
+		p.nextToken()
+	}
+	return exp
 }
 
 func (p *Parser) parseInfixExpression(left Expression) Expression {
@@ -448,15 +639,15 @@ func (p *Parser) parseMethodCallExpression(object Expression) Expression {
 func (p *Parser) parseSqlQueryExpression(token lexer.Token) Expression {
 	exp := &SqlQueryExpression{Token: token, Args: []Expression{}, Columns: []string{}}
 	var query strings.Builder
-	
+
 	p.nextToken()
-	
+
 	isSelect := false
 	isFrom := false
-	
+
 	for !p.curTokenIs(lexer.TOKEN_RPAREN) && !p.curTokenIs(lexer.TOKEN_EOF) {
 		literal := p.curToken.Literal
-		
+
 		if strings.ToUpper(literal) == "SELECT" {
 			isSelect = true
 		} else if strings.ToUpper(literal) == "FROM" {
@@ -487,7 +678,7 @@ func (p *Parser) parseSqlQueryExpression(token lexer.Token) Expression {
 		}
 		p.nextToken()
 	}
-	
+
 	exp.Query = query.String()
 	return exp
 }
@@ -510,11 +701,11 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 func (p *Parser) parseNullCoalesceExpression(left Expression) Expression {
 	exp := &NullCoalesceExpression{Token: p.curToken, Left: left}
-	
+
 	precedence := p.curPrecedence()
 	p.nextToken()
 	exp.Right = p.ParseExpression(precedence)
-	
+
 	return exp
 }
 
@@ -560,7 +751,7 @@ func (p *Parser) expectPeek(t lexer.TokenType) bool {
 }
 
 func (p *Parser) peekError(t lexer.TokenType) {
-	msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
+	msg := fmt.Sprintf("line %d, col %d: expected next token to be %s, got %s instead", p.peekToken.Line, p.peekToken.Column, t, p.peekToken.Type)
 	p.errors = append(p.errors, msg)
 }
 

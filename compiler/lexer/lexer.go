@@ -3,23 +3,31 @@ package lexer
 type TokenType string
 
 const (
-	TOKEN_RENDER    TokenType = "RENDER"
-	TOKEN_FUNCTION  TokenType = "FUNCTION"
-	TOKEN_RETURN    TokenType = "RETURN"
-	TOKEN_PRINT     TokenType = "PRINT"
-	TOKEN_LET       TokenType = "LET"
-	TOKEN_IMPORT    TokenType = "IMPORT"
-	TOKEN_BEFORE    TokenType = "BEFORE"
-	TOKEN_STRING    TokenType = "STRING_TYPE"
-	TOKEN_IF        TokenType = "IF"
-	TOKEN_ELSE      TokenType = "ELSE"
-	TOKEN_WHILE     TokenType = "WHILE"
-	
-	TOKEN_IDENT     TokenType = "IDENT"
-	TOKEN_VAR       TokenType = "VAR"
-	TOKEN_LITERAL   TokenType = "LITERAL"
-	TOKEN_INT       TokenType = "INT"
-	
+	TOKEN_RENDER   TokenType = "RENDER"
+	TOKEN_FUNCTION TokenType = "FUNCTION"
+	TOKEN_RETURN   TokenType = "RETURN"
+	TOKEN_PRINT    TokenType = "PRINT"
+	TOKEN_LET      TokenType = "LET"
+	TOKEN_IMPORT   TokenType = "IMPORT"
+	TOKEN_BEFORE   TokenType = "BEFORE"
+	TOKEN_STRING   TokenType = "STRING_TYPE"
+	TOKEN_IF       TokenType = "IF"
+	TOKEN_ELSE     TokenType = "ELSE"
+	TOKEN_WHILE    TokenType = "WHILE"
+	TOKEN_FOR      TokenType = "FOR"
+	TOKEN_FOREACH  TokenType = "FOREACH"
+	TOKEN_AS       TokenType = "AS"
+	TOKEN_BREAK    TokenType = "BREAK"
+	TOKEN_CONTINUE TokenType = "CONTINUE"
+	TOKEN_STRUCT   TokenType = "STRUCT"
+	TOKEN_ENUM     TokenType = "ENUM"
+	TOKEN_MATCH    TokenType = "MATCH"
+
+	TOKEN_IDENT   TokenType = "IDENT"
+	TOKEN_VAR     TokenType = "VAR"
+	TOKEN_LITERAL TokenType = "LITERAL"
+	TOKEN_INT     TokenType = "INT"
+
 	TOKEN_LPAREN    TokenType = "LPAREN"
 	TOKEN_RPAREN    TokenType = "RPAREN"
 	TOKEN_LBRACE    TokenType = "LBRACE"
@@ -40,15 +48,19 @@ const (
 	TOKEN_COALESCE  TokenType = "COALESCE"
 	TOKEN_BANG      TokenType = "BANG"
 	TOKEN_ASSIGN    TokenType = "ASSIGN"
-	
-	TOKEN_EOF       TokenType = "EOF"
-	TOKEN_ILLEGAL   TokenType = "ILLEGAL"
+	TOKEN_COLON     TokenType = "COLON"
+	TOKEN_PIPE      TokenType = "PIPE"
+
+	TOKEN_EOF     TokenType = "EOF"
+	TOKEN_ILLEGAL TokenType = "ILLEGAL"
 )
 
 type Token struct {
 	Type      TokenType
 	Literal   string
 	Delimiter byte
+	Line      int
+	Column    int
 }
 
 type Lexer struct {
@@ -56,10 +68,12 @@ type Lexer struct {
 	position     int
 	readPosition int
 	ch           byte
+	line         int
+	column       int
 }
 
 func New(input string) *Lexer {
-	l := &Lexer{input: input}
+	l := &Lexer{input: input, line: 1}
 	l.readChar()
 	return l
 }
@@ -72,12 +86,20 @@ func (l *Lexer) readChar() {
 	}
 	l.position = l.readPosition
 	l.readPosition++
+	if l.ch == '\n' {
+		l.line++
+		l.column = 0
+	} else {
+		l.column++
+	}
 }
 
 func (l *Lexer) NextToken() Token {
 	var tok Token
 
 	l.skipWhitespace()
+
+	line, col := l.line, l.column
 
 	switch l.ch {
 	case '(':
@@ -138,10 +160,16 @@ func (l *Lexer) NextToken() Token {
 		} else {
 			tok = Token{Type: TOKEN_ASSIGN, Literal: string(l.ch)}
 		}
+	case ':':
+		tok = Token{Type: TOKEN_COLON, Literal: string(l.ch)}
+	case '|':
+		tok = Token{Type: TOKEN_PIPE, Literal: string(l.ch)}
 	case '$':
 		tok.Type = TOKEN_VAR
 		l.readChar()
 		tok.Literal = l.readIdentifier()
+		tok.Line = line
+		tok.Column = col
 		return tok
 	case '"':
 		tok.Type = TOKEN_LITERAL
@@ -158,15 +186,22 @@ func (l *Lexer) NextToken() Token {
 		if isLetter(l.ch) {
 			tok.Literal = l.readIdentifier()
 			tok.Type = lookupIdent(tok.Literal)
+			tok.Line = line
+			tok.Column = col
 			return tok
 		} else if isDigit(l.ch) {
 			tok.Type = TOKEN_INT
 			tok.Literal = l.readNumber()
+			tok.Line = line
+			tok.Column = col
 			return tok
 		} else {
 			tok = Token{Type: TOKEN_ILLEGAL, Literal: string(l.ch)}
 		}
 	}
+
+	tok.Line = line
+	tok.Column = col
 
 	l.readChar()
 	return tok
@@ -242,6 +277,14 @@ var keywords = map[string]TokenType{
 	"if":       TOKEN_IF,
 	"else":     TOKEN_ELSE,
 	"while":    TOKEN_WHILE,
+	"for":      TOKEN_FOR,
+	"foreach":  TOKEN_FOREACH,
+	"as":       TOKEN_AS,
+	"break":    TOKEN_BREAK,
+	"continue": TOKEN_CONTINUE,
+	"struct":   TOKEN_STRUCT,
+	"enum":     TOKEN_ENUM,
+	"match":    TOKEN_MATCH,
 	"error":    TOKEN_IDENT,
 	"SELECT":   TOKEN_IDENT,
 	"FROM":     TOKEN_IDENT,
