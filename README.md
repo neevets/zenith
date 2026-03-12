@@ -1,6 +1,8 @@
-# <img src="https://files.catbox.moe/t32wbx.png" width="200" alt="Zenith Logo">
-# Zenith: The Modern PHP Runtime
-**Official Site**: [zenithlang.vercel.app](https://zenithlang.vercel.app)
+<div align="center">
+  <img src="https://files.catbox.moe/lugi09.png" width="200" alt="Zenith Logo">
+  <h1>Zenith: The Modern PHP Runtime</h1>
+  <p><strong>Official Site</strong>: <a href="https://zenithlang.vercel.app">zenithlang.vercel.app</a></p>
+</div>
 
 Zenith is a reimagined PHP experience. It's fast, secure, and built for the modern cloud.
 
