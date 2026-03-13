@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
 use std::fs;
-use sha2::{Sha256, Digest};
+use std::path::PathBuf;
 
 pub struct Cache {
     pub base_dir: PathBuf,
@@ -8,7 +8,8 @@ pub struct Cache {
 
 impl Cache {
     pub fn new() -> anyhow::Result<Self> {
-        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
         let base = home.join(".zenith").join("cache");
         fs::create_dir_all(&base)?;
         Ok(Cache { base_dir: base })
@@ -31,7 +32,10 @@ impl Cache {
         println!("Downloading {}...", url);
         let mut response = reqwest::blocking::get(url)?;
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to download: status {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to download: status {}",
+                response.status()
+            ));
         }
 
         let mut out = fs::File::create(&local_path)?;
@@ -41,7 +45,10 @@ impl Cache {
     }
 
     pub fn get_transpiled(&self, source_hash: &str) -> Option<String> {
-        let local_path = self.base_dir.join("transpiled").join(format!("{}.php", source_hash));
+        let local_path = self
+            .base_dir
+            .join("transpiled")
+            .join(format!("{}.php", source_hash));
         if local_path.exists() {
             fs::read_to_string(local_path).ok()
         } else {
@@ -58,6 +65,8 @@ impl Cache {
     }
 
     pub fn get_transpiled_path(&self, source_hash: &str) -> PathBuf {
-        self.base_dir.join("transpiled").join(format!("{}.php", source_hash))
+        self.base_dir
+            .join("transpiled")
+            .join(format!("{}.php", source_hash))
     }
 }
