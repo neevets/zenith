@@ -2,8 +2,17 @@ name: Zenith Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -11,47 +20,96 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: '1.21'
+          components: rustfmt
 
-      - name: Build & Run Tests
-        run: |
-          go build -o zenith ./src/cmd/zenith/main.go
-          chmod +x ./zenith
-          for file in test/*.zen; do
-            echo "Testing $file..."
-            ./zenith run "$file" || exit 1
-          done
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
-  release:
-    name: Multi-Platform Build
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Build check
+        run: cargo check --all-targets --locked
+
+      - name: Run tests
+        run: cargo test --all-targets --locked
+
+  build:
+    name: Build ${{ matrix.os }}
     needs: test
-    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_name: zenith-linux-amd64
+            bin: zenith
+          - os: macos-latest
+            target_name: zenith-macos-arm64
+            bin: zenith
+          - os: windows-latest
+            target_name: zenith-windows-amd64
+            bin: zenith.exe
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cross-Compile
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package tar.gz (unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/zenith-linux-amd64 ./src/cmd/zenith/main.go
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/zenith-macos-arm64 ./src/cmd/zenith/main.go
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/zenith-windows.exe ./src/cmd/zenith/main.go
+          cp target/release/${{ matrix.bin }} ./${{ matrix.bin }}
+          tar -czf dist/${{ matrix.target_name }}.tar.gz ./${{ matrix.bin }}
+          rm ./${{ matrix.bin }}
 
-      - name: GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: Package tar.gz (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/release/${{ matrix.bin }}" "${{ matrix.bin }}"
+          tar -czf "dist/${{ matrix.target_name }}.tar.gz" "${{ matrix.bin }}"
+          Remove-Item "${{ matrix.bin }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: dist/*
+          name: ${{ matrix.target_name }}
+          path: dist/${{ matrix.target_name }}.tar.gz
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
           tag_name: ${{ github.ref_name }}
-          name: Zenith ${{ github.ref_name }} - Stable
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Zenith ${{ github.ref_name }}
+          files: dist/*.tar.gz
