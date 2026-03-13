@@ -1,8 +1,8 @@
-use std::fs;
+use flate2::read::GzDecoder;
 use std::env;
+use std::fs;
 use std::io::Cursor;
 use tar::Archive;
-use flate2::read::GzDecoder;
 
 const PHP_VERSION: &str = "8.2.0";
 const BASE_URL: &str = "https://github.com/shivammathur/php-bin/releases/download/";
@@ -23,13 +23,21 @@ pub fn ensure_php() -> anyhow::Result<String> {
         return Ok(local_php.to_string_lossy().to_string());
     }
 
-    println!("PHP not found in system. Downloading PHP {} for {}/{}...", PHP_VERSION, env::consts::OS, env::consts::ARCH);
+    println!(
+        "PHP not found in system. Downloading PHP {} for {}/{}...",
+        PHP_VERSION,
+        env::consts::OS,
+        env::consts::ARCH
+    );
     fs::create_dir_all(&local_bin)?;
 
     let url = get_download_url()?;
     let response = reqwest::blocking::get(url)?;
     if !response.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to download PHP: status {}", response.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to download PHP: status {}",
+            response.status()
+        ));
     }
 
     let content = response.bytes()?;
@@ -40,7 +48,10 @@ pub fn ensure_php() -> anyhow::Result<String> {
     archive.unpack(&local_bin)?;
 
     if !local_php.exists() {
-        return Err(anyhow::anyhow!("Extraction succeeded but binary not found at {:?}", local_php));
+        return Err(anyhow::anyhow!(
+            "Extraction succeeded but binary not found at {:?}",
+            local_php
+        ));
     }
 
     #[cfg(unix)]
@@ -62,5 +73,12 @@ fn get_download_url() -> anyhow::Result<String> {
         _ => return Err(anyhow::anyhow!("Unsupported OS: {}", env::consts::OS)),
     };
 
-    Ok(format!("{}{}/php-{}-{}-{}.tar.gz", BASE_URL, PHP_VERSION, PHP_VERSION, os_name, env::consts::ARCH))
+    Ok(format!(
+        "{}{}/php-{}-{}-{}.tar.gz",
+        BASE_URL,
+        PHP_VERSION,
+        PHP_VERSION,
+        os_name,
+        env::consts::ARCH
+    ))
 }

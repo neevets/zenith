@@ -66,3 +66,22 @@ let $status = match($code) {
 - [Functional Programming](docs/functional.md)
 - [Modern PHP Features](docs/modern_php.md)
 - [Architecture & Security](docs/architecture.md)
+
+
+## IDE Support (.zen)
+Zenith files use the `.zen` extension.
+
+- **VS Code**: open the workspace and install the recommended extension (`neevets.zenith-vscode`).
+- **Cursor**: reads the same `.vscode` workspace config, so `.zen` and `.zenith` are associated automatically.
+- **Antigravity**: if it is VS Code-compatible, it will also pick up `.vscode/settings.json` and `.vscode/extensions.json` from this repository.
+
+If your IDE does not auto-load workspace settings, add this association manually:
+
+```json
+{
+  "files.associations": {
+    "*.zen": "zenith",
+    "*.zenith": "zenith"
+  }
+}
+```
