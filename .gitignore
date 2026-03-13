@@ -1,11 +1,8 @@
-# Rust
 /target/
 **/*.rs.bk
 
-# Zenith Binaries (Compiled)
 /zenith
 
-# IDEs and OS
 .vscode/
 .idea/
 *.swp

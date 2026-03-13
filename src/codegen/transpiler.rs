@@ -225,8 +225,19 @@ impl Transpiler {
                     }
                     let result_str = match &arm.result {
                         Expression::Block(b) => {
-                            let block_code = self.transpile_block(b);
-                            format!("(function() use ($file, $db, $ctx) {{\n            {}\n        }})()", block_code.trim())
+                            if b.statements.len() == 1 {
+                                 if let Statement::Expression(e) = &b.statements[0] {
+                                     self.transpile_expression(e)
+                                 } else if let Statement::Return(e) = &b.statements[0] {
+                                     self.transpile_expression(e)
+                                 } else {
+                                     let block_code = self.transpile_block(b);
+                                     format!("(function() use ($file, $db, $ctx) {{\n            {}\n        }})()", block_code.trim())
+                                 }
+                            } else {
+                                let block_code = self.transpile_block(b);
+                                format!("(function() use ($file, $db, $ctx) {{\n            {}\n        }})()", block_code.trim())
+                            }
                         }
                         _ => self.transpile_expression(&arm.result),
                     };
@@ -290,9 +301,40 @@ impl Transpiler {
     }
 
     fn apply_xss_protection(&self, input: &str) -> String {
-        // Simple implementation of the bracket-based XSS protection from Go
-        // This is a placeholder for the logic that finds {expr} and wraps it in htmlspecialchars
-        input.to_string()
+        let mut out = String::new();
+        let mut i = 0;
+        let bytes = input.as_bytes();
+        
+        while i < bytes.len() {
+            if bytes[i] == b'{' && i + 1 < bytes.len() && (bytes[i+1] == b'$' || bytes[i+1].is_ascii_alphabetic()) {
+                // Find matching }
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j] != b'}' {
+                    j += 1;
+                }
+                
+                if j < bytes.len() {
+                    let expr = &input[i+1..j];
+                    // Wrap in htmlspecialchars and use concatenation
+                    out.push_str(&format!("\" . htmlspecialchars((string)({}), ENT_QUOTES, 'UTF-8') . \"", self.wrap_expr_if_needed(expr)));
+                    i = j + 1;
+                    continue;
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    fn wrap_expr_if_needed(&self, expr: &str) -> String {
+        if expr.starts_with('$') {
+            expr.to_string()
+        } else {
+            // If it's a raw identifier in a template, it might need $
+            // But Zenith usually uses $ for variables.
+            expr.to_string()
+        }
     }
 
     pub fn get_php_header(&self) -> String {

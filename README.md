@@ -19,6 +19,13 @@ Zenith is a high-performance programming language that transpiles to PHP 8.1+. I
 - **Concurrent Blocks**: Native support for parallelism via `spawn` blocks and fibers.
 
 ## Installation
+
+### Quick Install (Linux & macOS)
+```bash
+curl -fsS https://dl.zenith.vercel.app/install.sh | sh
+```
+
+### Build from Source
 ```bash
 # Clone and build
 git clone https://github.com/neevets/zenith

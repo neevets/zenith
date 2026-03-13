@@ -1,0 +1,7 @@
+render function test_xss() {
+    let $unsafe = "<script>alert('XSS')</script>";
+    println("Testing XSS Protection:");
+    println("Unsafe content should be escaped: {$unsafe}");
+}
+
+test_xss();

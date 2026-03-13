@@ -1,0 +1,6 @@
+let $x = 2;
+let $res = match($x) {
+    1 => "One",
+    default => "Many",
+};
+println($res);
