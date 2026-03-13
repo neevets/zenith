@@ -1,13 +1,14 @@
-use crate::core::lexer::{Lexer, Token, TokenType};
 use crate::core::ast::{
-    Program, Statement, Expression, BlockStatement, Parameter, 
-    EnumCase, StructField, MatchArm
+    BlockStatement, EnumCase, Expression, MatchArm, Parameter, Program, Statement, StructField,
 };
+use crate::core::lexer::{Lexer, Token, TokenType};
 
 #[derive(Debug, Clone)]
 pub struct ParserError {
     pub message: String,
     pub span: logos::Span,
+    pub label: Option<String>,
+    pub help: Option<String>,
 }
 
 #[derive(PartialEq, PartialOrd)]
@@ -171,7 +172,9 @@ impl<'a> Parser<'a> {
 
     fn parse_expression_statement(&mut self) -> Statement {
         let expr = self.parse_expression(Precedence::Lowest);
-        if !matches!(expr, Expression::Block(_)) && !matches!(expr, Expression::MatchExpression { .. }) {
+        if !matches!(expr, Expression::Block(_))
+            && !matches!(expr, Expression::MatchExpression { .. })
+        {
             if self.peek_token_is(TokenType::Semicolon) {
                 self.next_token();
             }
@@ -350,7 +353,10 @@ impl<'a> Parser<'a> {
                 value = Some(self.parse_expression(Precedence::Lowest));
             }
 
-            cases.push(EnumCase { name: case_name, value });
+            cases.push(EnumCase {
+                name: case_name,
+                value,
+            });
 
             if self.peek_token_is(TokenType::Comma) {
                 self.next_token();
@@ -412,7 +418,10 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> String {
         let mut t = self.cur_token.literal.clone();
-        while self.peek_token_is(TokenType::Ident) || self.peek_token_is(TokenType::And) || self.peek_token_is(TokenType::Or) {
+        while self.peek_token_is(TokenType::Ident)
+            || self.peek_token_is(TokenType::And)
+            || self.peek_token_is(TokenType::Or)
+        {
             self.next_token();
             t.push_str(&self.cur_token.literal);
         }
@@ -445,7 +454,12 @@ impl<'a> Parser<'a> {
         let mut is_var = false;
 
         match self.cur_token.token_type {
-            TokenType::StringType | TokenType::IntType | TokenType::BoolType | TokenType::FloatType | TokenType::AnyType | TokenType::Ident => {
+            TokenType::StringType
+            | TokenType::IntType
+            | TokenType::BoolType
+            | TokenType::FloatType
+            | TokenType::AnyType
+            | TokenType::Ident => {
                 let first_lit = self.cur_token.literal.clone();
                 if self.peek_token_is(TokenType::Var) || self.peek_token_is(TokenType::Ident) {
                     param_type = Some(first_lit);
@@ -475,6 +489,11 @@ impl<'a> Parser<'a> {
                 self.errors.push(ParserError {
                     message: format!("expected parameter, got {:?}", self.cur_token.token_type),
                     span: self.cur_token.span.clone(),
+                    label: Some("invalid parameter declaration".into()),
+                    help: Some(
+                        "Parameters should look like `name: Type`, `$name: Type`, or `Type name`."
+                            .into(),
+                    ),
                 });
             }
         }
@@ -493,9 +512,15 @@ impl<'a> Parser<'a> {
             TokenType::Literal(_) => Expression::StringLiteral {
                 value: self.cur_token.literal.clone(),
                 is_render: self.is_render,
-                delimiter: if self.cur_token.literal.starts_with('\'') { '\'' } else { '"' },
+                delimiter: if self.cur_token.literal.starts_with('\'') {
+                    '\''
+                } else {
+                    '"'
+                },
             },
-            TokenType::Int => Expression::IntegerLiteral(self.cur_token.literal.parse().unwrap_or(0)),
+            TokenType::Int => {
+                Expression::IntegerLiteral(self.cur_token.literal.parse().unwrap_or(0))
+            }
             TokenType::Print => Expression::Identifier("print".into()),
             TokenType::LBracket => self.parse_array_literal(),
             TokenType::Match => self.parse_match_expression(),
@@ -508,12 +533,17 @@ impl<'a> Parser<'a> {
                 self.errors.push(ParserError {
                     message: format!("no prefix parse function for {:?}", self.cur_token.token_type),
                     span: self.cur_token.span.clone(),
+                    label: Some("unexpected token here".into()),
+                    help: Some("Start expressions with a value (identifier, literal, `(`, `[`, `{`) or a unary operator (`!`, `-`).".into()),
                 });
                 return Expression::Identifier("error".into());
             }
         };
 
-        while !self.peek_token_is(TokenType::Semicolon) && !self.peek_token_is(TokenType::Eof) && precedence < Precedence::from(&self.peek_token.token_type) {
+        while !self.peek_token_is(TokenType::Semicolon)
+            && !self.peek_token_is(TokenType::Eof)
+            && precedence < Precedence::from(&self.peek_token.token_type)
+        {
             match self.peek_token.token_type {
                 TokenType::Dot | TokenType::Nullsafe => {
                     self.next_token();
@@ -531,7 +561,14 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     left = self.parse_null_coalesce_expression(left);
                 }
-                TokenType::Plus | TokenType::Minus | TokenType::Asterisk | TokenType::Slash | TokenType::Lt | TokenType::Gt | TokenType::Eq | TokenType::NotEq => {
+                TokenType::Plus
+                | TokenType::Minus
+                | TokenType::Asterisk
+                | TokenType::Slash
+                | TokenType::Lt
+                | TokenType::Gt
+                | TokenType::Eq
+                | TokenType::NotEq => {
                     self.next_token();
                     left = self.parse_infix_expression(left);
                 }
@@ -807,7 +844,11 @@ impl<'a> Parser<'a> {
             }
         } else {
             self.next_token();
-            let body = self.parse_statement().unwrap_or(Statement::Expression(Expression::Identifier("error".into())));
+            let body =
+                self.parse_statement()
+                    .unwrap_or(Statement::Expression(Expression::Identifier(
+                        "error".into(),
+                    )));
             Expression::SpawnExpression {
                 body: Box::new(body),
             }
@@ -827,24 +868,25 @@ impl<'a> Parser<'a> {
         // Let's assume if peek is Ident/Literal and peek.peek is Colon, it's a map.
         // For simplicity, let's just try to parse a block and if it fails or looks like a map, fallback.
         // Actually, Let's just check the next token and the one after it.
-        
+
         // Actually, let's just use a simple heuristic:
         // If next token is Ident/Literal and the one after is Colon, it's a map.
         // But we don't have a peek_peek token easily.
         // Let's just try parse_block_statement and if it contains a single expression statement that is an assignment or something... no.
-        
+
         // Let's stick to: if we see a Colon after the first token, it's a map.
         // I'll add a peek_peek_token to the parser.
-        
-        if self.peek_token.token_type == TokenType::Ident || matches!(self.peek_token.token_type, TokenType::Literal(_)) {
-             // We'd need to peek one more. For now, let's just assume if it's in a Render function and starts with an Ident, it might be a block.
-             // But wait, the most reliable way in Zenith is to see if there's a Colon.
+
+        if self.peek_token.token_type == TokenType::Ident
+            || matches!(self.peek_token.token_type, TokenType::Literal(_))
+        {
+            // We'd need to peek one more. For now, let's just assume if it's in a Render function and starts with an Ident, it might be a block.
+            // But wait, the most reliable way in Zenith is to see if there's a Colon.
         }
-        
+
         // Demo app uses blocks in match arms.
         Expression::Block(self.parse_block_statement())
     }
-
 
     fn parse_null_coalesce_expression(&mut self, left: Expression) -> Expression {
         let precedence = Precedence::from(&self.cur_token.token_type);
@@ -905,6 +947,8 @@ impl<'a> Parser<'a> {
         self.errors.push(ParserError {
             message: msg,
             span: self.peek_token.span.clone(),
+            label: Some(format!("expected {:?} here", t)),
+            help: Some("Check for a missing delimiter, comma, semicolon, or closing bracket before this token.".into()),
         });
     }
 }
