@@ -1,5 +1,10 @@
 {
   "files.associations": {
-    "*.zen": "zenith"
+    "*.zen": "zenith",
+    "*.zenith": "zenith"
+  },
+  "[zenith]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
   }
 }
