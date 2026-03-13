@@ -7,10 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/neevets/zenith/compiler/lexer"
-	"github.com/neevets/zenith/compiler/parser"
-	"github.com/neevets/zenith/compiler/transpiler"
-	"github.com/neevets/zenith/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/compiler/lexer"
+	"github.com/neevets/zenith/src/internal/compiler/parser"
+	"github.com/neevets/zenith/src/internal/compiler/transpiler"
+	"github.com/neevets/zenith/src/internal/compiler/analyzer"
 )
 
 func Bundle(filename string, output string) error {

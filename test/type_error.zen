@@ -1,0 +1,1 @@
+let $name: int = "Zenith"; print($name);

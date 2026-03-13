@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://files.catbox.moe/lugi09.png" width="200" alt="Zenith Logo">
+  <img src="assets/logo.png" width="200" alt="Zenith">
   <p><a href="https://zenithlang.vercel.app">zenithlang.vercel.app</a></p>
   <h1>Zenith: The Modern PHP Runtime</h1>
   </div>
@@ -30,5 +30,5 @@ zenith serve 8080
 ```
 
 ## Performance
-- **Transpilation**: >350 lines/ms.
-- **Latency**: <30ms total E2E for standard APIs.
+- **Transpilation**: >350 lines/ms
+- **Latency**: <30ms total E2E for standard APIs

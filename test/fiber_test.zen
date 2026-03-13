@@ -1,0 +1,1 @@
+let $fiber = spawn { print("Fiber started\n"); yield "suspended"; print("Fiber resumed\n"); }; print("Main started\n"); $fiber.resume();

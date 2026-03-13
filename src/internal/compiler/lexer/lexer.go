@@ -14,12 +14,10 @@ const (
 	TOKEN_IF        TokenType = "IF"
 	TOKEN_ELSE      TokenType = "ELSE"
 	TOKEN_WHILE     TokenType = "WHILE"
-	
 	TOKEN_IDENT     TokenType = "IDENT"
 	TOKEN_VAR       TokenType = "VAR"
 	TOKEN_LITERAL   TokenType = "LITERAL"
 	TOKEN_INT       TokenType = "INT"
-	
 	TOKEN_LPAREN    TokenType = "LPAREN"
 	TOKEN_RPAREN    TokenType = "RPAREN"
 	TOKEN_LBRACE    TokenType = "LBRACE"
@@ -40,7 +38,18 @@ const (
 	TOKEN_COALESCE  TokenType = "COALESCE"
 	TOKEN_BANG      TokenType = "BANG"
 	TOKEN_ASSIGN    TokenType = "ASSIGN"
-	
+	TOKEN_COLON     TokenType = "COLON"
+	TOKEN_PIPE      TokenType = "PIPE"
+	TOKEN_NULLSAFE  TokenType = "NULLSAFE"
+	TOKEN_MATCH     TokenType = "MATCH"
+	TOKEN_ARROW     TokenType = "ARROW"
+	TOKEN_FN        TokenType = "FN"
+	TOKEN_SPAWN     TokenType = "SPAWN"
+	TOKEN_YIELD     TokenType = "YIELD"
+	TOKEN_ENUM      TokenType = "ENUM"
+	TOKEN_READONLY  TokenType = "READONLY"
+	TOKEN_AND       TokenType = "AND"
+	TOKEN_OR        TokenType = "OR"
 	TOKEN_EOF       TokenType = "EOF"
 	TOKEN_ILLEGAL   TokenType = "ILLEGAL"
 )
@@ -76,9 +85,7 @@ func (l *Lexer) readChar() {
 
 func (l *Lexer) NextToken() Token {
 	var tok Token
-
 	l.skipWhitespace()
-
 	switch l.ch {
 	case '(':
 		tok = Token{Type: TOKEN_LPAREN, Literal: string(l.ch)}
@@ -88,6 +95,8 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TOKEN_LBRACE, Literal: string(l.ch)}
 	case '}':
 		tok = Token{Type: TOKEN_RBRACE, Literal: string(l.ch)}
+	case ':':
+		tok = Token{Type: TOKEN_COLON, Literal: string(l.ch)}
 	case ',':
 		tok = Token{Type: TOKEN_COMMA, Literal: string(l.ch)}
 	case '[':
@@ -113,6 +122,15 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: TOKEN_COALESCE, Literal: string(ch) + string(l.ch)}
+		} else if l.peekChar() == '-' {
+			if l.peekPeekChar() == '>' {
+				ch := l.ch
+				l.readChar()
+				l.readChar()
+				tok = Token{Type: TOKEN_NULLSAFE, Literal: string(ch) + "->"}
+			} else {
+				tok = Token{Type: TOKEN_QUESTION, Literal: string(l.ch)}
+			}
 		} else {
 			tok = Token{Type: TOKEN_QUESTION, Literal: string(l.ch)}
 		}
@@ -130,11 +148,25 @@ func (l *Lexer) NextToken() Token {
 		} else {
 			tok = Token{Type: TOKEN_BANG, Literal: string(l.ch)}
 		}
+	case '|':
+		if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: TOKEN_PIPE, Literal: string(ch) + string(l.ch)}
+		} else {
+			tok = Token{Type: TOKEN_OR, Literal: string(l.ch)}
+		}
+	case '&':
+		tok = Token{Type: TOKEN_AND, Literal: string(l.ch)}
 	case '=':
 		if l.peekChar() == '=' {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: TOKEN_EQ, Literal: string(ch) + string(l.ch)}
+		} else if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: TOKEN_ARROW, Literal: string(ch) + string(l.ch)}
 		} else {
 			tok = Token{Type: TOKEN_ASSIGN, Literal: string(l.ch)}
 		}
@@ -167,7 +199,6 @@ func (l *Lexer) NextToken() Token {
 			tok = Token{Type: TOKEN_ILLEGAL, Literal: string(l.ch)}
 		}
 	}
-
 	l.readChar()
 	return tok
 }
@@ -200,6 +231,13 @@ func (l *Lexer) peekChar() byte {
 		return 0
 	}
 	return l.input[l.readPosition]
+}
+
+func (l *Lexer) peekPeekChar() byte {
+	if l.readPosition+1 >= len(l.input) {
+		return 0
+	}
+	return l.input[l.readPosition+1]
 }
 
 func (l *Lexer) skipWhitespace() {
@@ -239,6 +277,18 @@ var keywords = map[string]TokenType{
 	"import":   TOKEN_IMPORT,
 	"before":   TOKEN_BEFORE,
 	"string":   TOKEN_STRING,
+	"int":      TOKEN_IDENT,
+	"bool":     TOKEN_IDENT,
+	"float":    TOKEN_IDENT,
+	"void":     TOKEN_IDENT,
+	"any":      TOKEN_IDENT,
+	"match":    TOKEN_MATCH,
+	"fn":       TOKEN_FN,
+	"spawn":    TOKEN_SPAWN,
+	"yield":    TOKEN_YIELD,
+	"enum":     TOKEN_ENUM,
+	"readonly": TOKEN_READONLY,
+	"default":  TOKEN_IDENT,
 	"if":       TOKEN_IF,
 	"else":     TOKEN_ELSE,
 	"while":    TOKEN_WHILE,

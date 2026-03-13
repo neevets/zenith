@@ -3,12 +3,13 @@ package transpiler
 import (
 	"fmt"
 	"strings"
-	"github.com/neevets/zenith/compiler/lexer"
-	"github.com/neevets/zenith/compiler/parser"
-	"github.com/neevets/zenith/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/compiler/lexer"
+	"github.com/neevets/zenith/src/internal/compiler/parser"
+	"github.com/neevets/zenith/src/internal/compiler/analyzer"
 )
 
-type Transpiler struct{
+
+type Transpiler struct {
 	lcMap *analyzer.LifeCycleMap
 }
 
@@ -25,19 +26,17 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 	case *parser.Program:
 		var out strings.Builder
 		for _, imp := range n.Imports {
-			phpPath := strings.Replace(imp.Path, ".zn", ".php", 1)
+			phpPath := strings.Replace(imp.Path, ".zen", ".php", 1)
 			out.WriteString(fmt.Sprintf("require_once \"%s\";\n", phpPath))
 		}
 		if len(n.Imports) > 0 {
 			out.WriteString("\n")
 		}
 		if n.Middleware != nil {
-			out.WriteString(t.Transpile(n.Middleware))
-			out.WriteString("\n")
+			out.WriteString(t.Transpile(n.Middleware) + "\n")
 		}
 		for _, stmt := range n.Statements {
-			out.WriteString(t.Transpile(stmt))
-			out.WriteString("\n")
+			out.WriteString(t.Transpile(stmt) + "\n")
 			if t.lcMap != nil {
 				if vars, ok := t.lcMap.LastUses[stmt]; ok {
 					for _, v := range vars {
@@ -50,9 +49,7 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 
 	case *parser.FunctionDefinition:
 		var out strings.Builder
-		out.WriteString("function ")
-		out.WriteString(n.Name.Value)
-		out.WriteString("(")
+		out.WriteString("function " + n.Name.Value + "(")
 		params := []string{}
 		for _, p := range n.Parameters {
 			s := ""
@@ -65,10 +62,11 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 			s += p.Name
 			params = append(params, s)
 		}
-		out.WriteString(strings.Join(params, ", "))
-		out.WriteString(") {\n")
-		out.WriteString(t.Transpile(n.Body))
-		out.WriteString("}\n")
+		out.WriteString(strings.Join(params, ", ") + ")")
+		if n.ReturnType != "" {
+			out.WriteString(": " + n.ReturnType)
+		}
+		out.WriteString(" {\n" + t.Transpile(n.Body) + "}\n")
 		return out.String()
 
 	case *parser.LetStatement:
@@ -77,9 +75,7 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 	case *parser.BlockStatement:
 		var out strings.Builder
 		for _, stmt := range n.Statements {
-			out.WriteString("    ")
-			out.WriteString(t.Transpile(stmt))
-			out.WriteString("\n")
+			out.WriteString("    " + t.Transpile(stmt) + "\n")
 			if t.lcMap != nil {
 				if vars, ok := t.lcMap.LastUses[stmt]; ok {
 					for _, v := range vars {
@@ -94,7 +90,7 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		return fmt.Sprintf("return %s;", t.Transpile(n.ReturnValue))
 
 	case *parser.ExpressionStatement:
-		return fmt.Sprintf("%s;", t.Transpile(n.Expression))
+		return t.Transpile(n.Expression) + ";"
 
 	case *parser.CallExpression:
 		funcName := t.Transpile(n.Function)
@@ -102,11 +98,9 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		for _, arg := range n.Arguments {
 			args = append(args, t.Transpile(arg))
 		}
-		
 		if funcName == "print" {
 			return fmt.Sprintf("echo %s", strings.Join(args, ", "))
 		}
-		
 		return fmt.Sprintf("%s(%s)", funcName, strings.Join(args, ", "))
 
 	case *parser.Identifier:
@@ -136,7 +130,6 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		for _, arg := range n.Arguments {
 			args = append(args, t.Transpile(arg))
 		}
-		
 		switch method {
 		case "length":
 			return fmt.Sprintf("strlen(%s)", obj)
@@ -151,7 +144,6 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 				return fmt.Sprintf("json_encode(%s)", strings.Join(args, ", "))
 			}
 		}
-
 		if obj == "$ctx" {
 			switch method {
 			case "query":
@@ -166,13 +158,15 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 				return "$_POST"
 			}
 		}
-		
-		return fmt.Sprintf("%s->%s(%s)", obj, method, strings.Join(args, ", "))
+		op := "->"
+		if n.IsNullsafe {
+			op = "?->"
+		}
+		return fmt.Sprintf("%s%s%s(%s)", obj, op, method, strings.Join(args, ", "))
 
 	case *parser.MemberExpression:
 		obj := t.Transpile(n.Object)
 		prop := n.Property.Value
-		
 		if obj == "$ctx" {
 			switch prop {
 			case "query":
@@ -181,20 +175,21 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 				return "$_POST"
 			}
 		}
-		
 		if obj == "$_GET" {
 			return fmt.Sprintf("$_GET['%s']", prop)
 		}
 		if obj == "$_POST" {
 			return fmt.Sprintf("$_POST['%s']", prop)
 		}
-
-		return fmt.Sprintf("%s->%s", obj, prop)
+		op := "->"
+		if n.IsNullsafe {
+			op = "?->"
+		}
+		return fmt.Sprintf("%s%s%s", obj, op, prop)
 
 	case *parser.NullCoalesceExpression:
 		left := t.Transpile(n.Left)
 		right := t.Transpile(n.Right)
-		
 		if call, ok := n.Right.(*parser.CallExpression); ok {
 			if ident, ok := call.Function.(*parser.Identifier); ok && ident.Value == "error" {
 				msg := "Error"
@@ -204,7 +199,6 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 				return fmt.Sprintf("(%s ?? die(%s))", left, msg)
 			}
 		}
-		
 		return fmt.Sprintf("(%s ?? %s)", left, right)
 
 	case *parser.SqlQueryExpression:
@@ -212,17 +206,12 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		for _, arg := range n.Args {
 			args = append(args, t.Transpile(arg))
 		}
-		
-		useClause := "$db"
+		use := "$db"
 		if len(args) > 0 {
-			useClause = strings.Join(args, ", ") + ", $db"
+			use = strings.Join(args, ", ") + ", $db"
 		}
-		
 		return fmt.Sprintf("(function() use (%s) { try { $stmt = $db->prepare(\"%s\"); $stmt->execute([%s]); return $stmt->fetchAll(); } catch (Exception $e) { return null; } })()",
-			useClause,
-			n.Query,
-			strings.Join(args, ", "),
-		)
+			use, n.Query, strings.Join(args, ", "))
 
 	case *parser.ArrayLiteral:
 		elements := []string{}
@@ -235,48 +224,134 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		return fmt.Sprintf("%s[%s]", t.Transpile(n.Left), t.Transpile(n.Index))
 
 	case *parser.InfixExpression:
-		return fmt.Sprintf("(%s %s %s)", t.Transpile(n.Left), n.Operator, t.Transpile(n.Right))
+		op := n.Operator
+		if op == "+" {
+			op = "."
+		}
+		return fmt.Sprintf("(%s %s %s)", t.Transpile(n.Left), op, t.Transpile(n.Right))
 
 	case *parser.IfStatement:
 		var out strings.Builder
-		out.WriteString(fmt.Sprintf("if (%s) {\n", t.Transpile(n.Condition)))
-		out.WriteString(t.Transpile(n.Consequence))
-		out.WriteString("}")
+		out.WriteString(fmt.Sprintf("if (%s) {\n%s}", t.Transpile(n.Condition), t.Transpile(n.Consequence)))
 		if n.Alternative != nil {
-			out.WriteString(" else {\n")
-			out.WriteString(t.Transpile(n.Alternative))
-			out.WriteString("}")
+			out.WriteString(fmt.Sprintf(" else {\n%s}", t.Transpile(n.Alternative)))
 		}
 		return out.String()
 
 	case *parser.WhileStatement:
-		var out strings.Builder
-		out.WriteString(fmt.Sprintf("while (%s) {\n", t.Transpile(n.Condition)))
-		out.WriteString(t.Transpile(n.Body))
-		out.WriteString("}")
-		return out.String()
+		return fmt.Sprintf("while (%s) {\n%s}", t.Transpile(n.Condition), t.Transpile(n.Body))
 
 	case *parser.AssignExpression:
 		return fmt.Sprintf("%s = %s", t.Transpile(n.Left), t.Transpile(n.Value))
-	}
 
+	case *parser.PipeExpression:
+		lhs := t.Transpile(n.Left)
+		switch r := n.Right.(type) {
+		case *parser.CallExpression:
+			args := []string{lhs}
+			for _, arg := range r.Arguments {
+				args = append(args, t.Transpile(arg))
+			}
+			return fmt.Sprintf("%s(%s)", t.Transpile(r.Function), strings.Join(args, ", "))
+		case *parser.Identifier:
+			return fmt.Sprintf("%s(%s)", t.Transpile(r), lhs)
+		default:
+			return lhs
+		}
+
+	case *parser.MatchExpression:
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("match (%s) {\n", t.Transpile(n.Condition)))
+		for _, arm := range n.Arms {
+			out.WriteString("        ")
+			if arm.IsDefault {
+				out.WriteString("default")
+			} else {
+				vals := []string{}
+				for _, val := range arm.Values {
+					vals = append(vals, t.Transpile(val))
+				}
+				out.WriteString(strings.Join(vals, ", "))
+			}
+			out.WriteString(" => " + t.Transpile(arm.Result) + ",\n")
+		}
+		out.WriteString("    }")
+		return out.String()
+
+	case *parser.ArrowFunctionExpression:
+		params := []string{}
+		for _, p := range n.Parameters {
+			s := ""
+			if p.Type != "" {
+				s += p.Type + " "
+			}
+			if p.IsVar {
+				s += "$"
+			}
+			s += p.Name
+			params = append(params, s)
+		}
+		ret := ""
+		if n.ReturnType != "" {
+			ret = ": " + n.ReturnType
+		}
+		return fmt.Sprintf("fn(%s)%s => %s", strings.Join(params, ", "), ret, t.Transpile(n.Body))
+
+	case *parser.SpawnExpression:
+		var body string
+		if block, ok := n.Body.(*parser.BlockStatement); ok {
+			stmts := []string{}
+			for _, s := range block.Statements {
+				stmts = append(stmts, t.Transpile(s))
+			}
+			body = fmt.Sprintf("function() {\n            %s\n        }", strings.Join(stmts, "\n            "))
+		} else {
+			body = t.Transpile(n.Body)
+		}
+		return fmt.Sprintf("(function() { $f = new Fiber(%s); $f->start(); return $f; })()", body)
+
+	case *parser.YieldStatement:
+		val := ""
+		if n.Value != nil {
+			val = t.Transpile(n.Value)
+		}
+		return fmt.Sprintf("Fiber::suspend(%s);", val)
+
+	case *parser.EnumStatement:
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("enum %s {\n", n.Name.Value))
+		for _, c := range n.Cases {
+			out.WriteString(fmt.Sprintf("    case %s", c.Name.Value))
+			if c.Value != nil {
+				out.WriteString(fmt.Sprintf(" = %s", t.Transpile(c.Value)))
+			}
+			out.WriteString(";\n")
+		}
+		out.WriteString("}\n")
+		return out.String()
+
+	case *parser.StructDefinition:
+		var out strings.Builder
+		out.WriteString(fmt.Sprintf("class %s {\n", n.Name.Value))
+		for _, f := range n.Fields {
+			mod := "public"
+			if f.IsReadonly {
+				mod += " readonly"
+			}
+			typ := ""
+			if f.Type != "" {
+				typ = f.Type + " "
+			}
+			out.WriteString(fmt.Sprintf("    %s %s$%s;\n", mod, typ, f.Name))
+		}
+		out.WriteString("}\n")
+		return out.String()
+	}
 	return ""
 }
 
 func (t *Transpiler) GetPHPHeader() string {
-	return `<?php
-
-if (!class_exists('Context')) { class Context { public $query; public $body; } }
-
-function fetch($url) {
-    $opts = [
-        "http" => ["header" => "User-Agent: ZenithRuntime/1.0\r\n"]
-    ];
-    $context = stream_context_create($opts);
-    return file_get_contents($url, false, $context);
-}
-
-`
+	return "<?php\n\nif (!class_exists('Context')) { class Context { public $query; public $body; } }\n\nfunction fetch($url) {\n    $opts = [\"http\" => [\"header\" => \"User-Agent: ZenithRuntime/1.0\\r\\n\"]];\n    return file_get_contents($url, false, stream_context_create($opts));\n}\n\n"
 }
 
 func (t *Transpiler) applyXSSProtection(input string) string {
@@ -291,26 +366,20 @@ func (t *Transpiler) applyXSSProtection(input string) string {
 			break
 		}
 		end += start
-
 		content := result[start+1 : end]
-		
-		l := lexer.New(content)
-		p := parser.New(l)
-		expr := p.ParseExpression(0)
-
-		var replacement string
+		expr := parser.New(lexer.New(content)).ParseExpression(0)
+		var repl string
 		if expr != nil {
-			transpiledExpr := t.Transpile(expr)
+			tr := t.Transpile(expr)
 			if strings.HasPrefix(content, "$") {
-				replacement = "\" . htmlspecialchars(" + transpiledExpr + ") . \""
+				repl = "\" . htmlspecialchars(" + tr + ") . \""
 			} else {
-				replacement = "\" . (" + transpiledExpr + ") . \""
+				repl = "\" . (" + tr + ") . \""
 			}
 		} else {
-			replacement = content
+			repl = content
 		}
-
-		result = result[:start] + replacement + result[end+1:]
+		result = result[:start] + repl + result[end+1:]
 	}
 	return result
 }

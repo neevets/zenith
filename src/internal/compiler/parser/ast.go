@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/neevets/zenith/compiler/lexer"
+	"github.com/neevets/zenith/src/internal/compiler/lexer"
 )
 
 type Node interface {
@@ -36,6 +36,7 @@ type FunctionDefinition struct {
 	IsRender   bool
 	Name       *Identifier
 	Parameters []*Parameter
+	ReturnType string
 	Body       *BlockStatement
 }
 
@@ -53,6 +54,7 @@ func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
 type LetStatement struct {
 	Token lexer.Token
 	Name  *Variable
+	Type  string
 	Value Expression
 }
 
@@ -106,9 +108,9 @@ func (v *Variable) expressionNode()      {}
 func (v *Variable) TokenLiteral() string { return v.Token.Literal }
 
 type StringLiteral struct {
-	Token    lexer.Token
-	Value    string
-	IsRender bool
+	Token     lexer.Token
+	Value     string
+	IsRender  bool
 	Delimiter byte
 }
 
@@ -133,10 +135,11 @@ func (ce *CallExpression) expressionNode()      {}
 func (ce *CallExpression) TokenLiteral() string { return ce.Token.Literal }
 
 type MethodCallExpression struct {
-	Token     lexer.Token
-	Object    Expression
-	Method    *Identifier
-	Arguments []Expression
+	Token      lexer.Token
+	Object     Expression
+	Method     *Identifier
+	Arguments  []Expression
+	IsNullsafe bool
 }
 
 func (mce *MethodCallExpression) expressionNode()      {}
@@ -171,9 +174,10 @@ func (al *ArrayLiteral) expressionNode()      {}
 func (al *ArrayLiteral) TokenLiteral() string { return al.Token.Literal }
 
 type MemberExpression struct {
-	Token    lexer.Token
-	Object   Expression
-	Property *Identifier
+	Token      lexer.Token
+	Object     Expression
+	Property   *Identifier
+	IsNullsafe bool
 }
 
 func (me *MemberExpression) expressionNode()      {}
@@ -225,3 +229,88 @@ type AssignExpression struct {
 
 func (ae *AssignExpression) expressionNode()      {}
 func (ae *AssignExpression) TokenLiteral() string { return ae.Token.Literal }
+
+type PipeExpression struct {
+	Token lexer.Token
+	Left  Expression
+	Right Expression
+}
+
+func (pe *PipeExpression) expressionNode()      {}
+func (pe *PipeExpression) TokenLiteral() string { return pe.Token.Literal }
+
+type MatchExpression struct {
+	Token     lexer.Token
+	Condition Expression
+	Arms      []*MatchArm
+}
+
+func (me *MatchExpression) expressionNode()      {}
+func (me *MatchExpression) TokenLiteral() string { return me.Token.Literal }
+
+type MatchArm struct {
+	Token     lexer.Token
+	Values    []Expression
+	IsDefault bool
+	Result    Expression
+}
+
+type ArrowFunctionExpression struct {
+	Token      lexer.Token
+	Parameters []*Parameter
+	ReturnType string
+	Body       Expression
+}
+
+func (afe *ArrowFunctionExpression) expressionNode()      {}
+func (afe *ArrowFunctionExpression) TokenLiteral() string { return afe.Token.Literal }
+
+type SpawnExpression struct {
+	Token lexer.Token
+	Body  Node
+}
+
+func (se *SpawnExpression) expressionNode()      {}
+func (se *SpawnExpression) TokenLiteral() string { return se.Token.Literal }
+
+type YieldStatement struct {
+	Token lexer.Token
+	Value Expression
+}
+
+func (ys *YieldStatement) statementNode()       {}
+func (ys *YieldStatement) TokenLiteral() string { return ys.Token.Literal }
+
+type EnumStatement struct {
+	Token lexer.Token
+	Name  *Identifier
+	Cases []*EnumCase
+}
+
+func (es *EnumStatement) statementNode()       {}
+func (es *EnumStatement) TokenLiteral() string { return es.Token.Literal }
+
+type EnumCase struct {
+	Token lexer.Token
+	Name  *Identifier
+	Value Expression
+}
+
+func (ec *EnumCase) expressionNode()      {}
+func (ec *EnumCase) TokenLiteral() string { return ec.Token.Literal }
+
+type StructDefinition struct {
+	Token  lexer.Token
+	Name   *Identifier
+	Fields []*StructField
+}
+
+func (sd *StructDefinition) statementNode()       {}
+func (sd *StructDefinition) TokenLiteral() string { return sd.Token.Literal }
+
+type StructField struct {
+	Token      lexer.Token
+	Name       string
+	Type       string
+	IsReadonly bool
+}

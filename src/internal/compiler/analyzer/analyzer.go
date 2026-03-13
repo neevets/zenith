@@ -1,7 +1,7 @@
 package analyzer
 
 import (
-	"github.com/neevets/zenith/compiler/parser"
+	"github.com/neevets/zenith/src/internal/compiler/parser"
 )
 
 type LifeCycleMap struct {
@@ -13,8 +13,10 @@ type LifeCycleAnalyzer struct {
 	lastUses map[string]parser.Statement
 	lcMap    *LifeCycleMap
 	sm       *SchemaManager
+	tc       *TypeChecker
 	inLoop   bool
 }
+
 
 func New() *LifeCycleAnalyzer {
 	return &LifeCycleAnalyzer{
@@ -24,13 +26,19 @@ func New() *LifeCycleAnalyzer {
 			Errors:   []string{},
 		},
 		sm: NewSchemaManager("zenith.schema.json"),
+		tc: NewTypeChecker(),
 	}
 }
+
 
 func (a *LifeCycleAnalyzer) Analyze(program *parser.Program) *LifeCycleMap {
 	a.traverseProgram(program)
 	
+	typeErrors := a.tc.Check(program)
+	a.lcMap.Errors = append(a.lcMap.Errors, typeErrors...)
+	
 	for varName, stmt := range a.lastUses {
+
 		a.lcMap.LastUses[stmt] = append(a.lcMap.LastUses[stmt], varName)
 	}
 	

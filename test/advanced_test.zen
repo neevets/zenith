@@ -1,0 +1,1 @@
+enum Status { Active, Inactive = 0 } struct User { readonly $id: int; $status: Status } function sync($user: User & Countable): void { print("Syncing user"); } let $u = 1; print("Advanced features parsed");

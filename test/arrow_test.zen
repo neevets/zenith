@@ -1,0 +1,1 @@
+let $add = fn($a: int, $b: int): int => $a + $b; print($add(5, 10));

@@ -7,11 +7,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/neevets/zenith/compiler/lexer"
-	"github.com/neevets/zenith/compiler/parser"
-	"github.com/neevets/zenith/compiler/transpiler"
-	"github.com/neevets/zenith/compiler/analyzer"
-	"github.com/neevets/zenith/internal/cache"
+	"github.com/neevets/zenith/src/internal/compiler/lexer"
+	"github.com/neevets/zenith/src/internal/compiler/parser"
+	"github.com/neevets/zenith/src/internal/compiler/transpiler"
+	"github.com/neevets/zenith/src/internal/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/cache"
 )
 
 type Options struct {
@@ -127,6 +127,6 @@ func transpileToPhp(znPath string) error {
 	prog := p.ParseProgram()
 	t := transpiler.New()
 	phpCode := t.GetPHPHeader() + t.Transpile(prog)
-	phpPath := strings.Replace(znPath, ".zn", ".php", 1)
+	phpPath := strings.Replace(znPath, ".zen", ".php", 1)
 	return ioutil.WriteFile(phpPath, []byte(phpCode), 0644)
 }

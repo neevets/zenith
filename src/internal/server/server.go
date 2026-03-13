@@ -8,16 +8,16 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/neevets/zenith/compiler/lexer"
-	"github.com/neevets/zenith/compiler/parser"
-	"github.com/neevets/zenith/compiler/transpiler"
-	"github.com/neevets/zenith/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/compiler/lexer"
+	"github.com/neevets/zenith/src/internal/compiler/parser"
+	"github.com/neevets/zenith/src/internal/compiler/transpiler"
+	"github.com/neevets/zenith/src/internal/compiler/analyzer"
 )
 
 func transpileLibraries() {
 	files, _ := ioutil.ReadDir(".")
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".zn") {
+		if strings.HasSuffix(f.Name(), ".zen") {
 			input, err := ioutil.ReadFile(f.Name())
 			if err != nil {
 				continue
@@ -30,7 +30,7 @@ func transpileLibraries() {
 			t := transpiler.New()
 			t.SetLifeCycleMap(lcMap)
 			phpCode := t.GetPHPHeader() + t.Transpile(program)
-			phpPath := strings.Replace(f.Name(), ".zn", ".php", 1)
+			phpPath := strings.Replace(f.Name(), ".zen", ".php", 1)
 			ioutil.WriteFile(phpPath, []byte(phpCode), 0644)
 		}
 	}

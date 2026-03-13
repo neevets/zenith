@@ -1,0 +1,1 @@
+let $msg = "hello zenith" |> strtoupper() |> trim(); print($msg);

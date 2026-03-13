@@ -32,7 +32,7 @@ func (c *Cache) Get(url string) (string, error) {
 	}
 
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(url)))
-	localPath := filepath.Join(c.BaseDir, hash+".zn")
+	localPath := filepath.Join(c.BaseDir, hash+".zen")
 
 	if _, err := os.Stat(localPath); err == nil {
 		return localPath, nil
