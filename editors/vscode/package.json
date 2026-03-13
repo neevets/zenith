@@ -31,5 +31,6 @@
                 "path": "./syntaxes/zenith.tmLanguage.json"
             }
         ]
-    }
+    },
+    "icon": "assets/logo.svg"
 }
