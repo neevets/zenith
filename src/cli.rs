@@ -1,7 +1,7 @@
-use clap::{Parser, Subcommand};
 use crate::core::engine::{Engine, Options as EngineOptions};
 use crate::core::server;
 use actix_rt;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "zenith")]
@@ -39,11 +39,11 @@ pub fn run_cli() {
             if *watch {
                 println!("[Zenith] Watching for changes in {}...", file);
                 let mut last_modified = std::fs::metadata(file).and_then(|m| m.modified()).ok();
-                
+
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(500));
                     let current_modified = std::fs::metadata(file).and_then(|m| m.modified()).ok();
-                    
+
                     if current_modified != last_modified {
                         last_modified = current_modified;
                         println!("[Zenith] Change detected, restarting...");
@@ -78,7 +78,9 @@ pub fn run_cli() {
             println!("[Zenith] Installing dependencies...");
             if std::path::Path::new("composer.json").exists() {
                 println!("[Zenith] Detected composer.json, running composer install...");
-                let _ = std::process::Command::new("composer").arg("install").status();
+                let _ = std::process::Command::new("composer")
+                    .arg("install")
+                    .status();
             }
             println!("[Zenith] Done.");
         }

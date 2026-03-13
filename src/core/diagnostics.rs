@@ -48,7 +48,7 @@ impl Diagnostic {
         let mut line_num = 1;
         let mut col_num = 1;
         let mut line_start = 0;
-        
+
         let bytes = source.as_bytes();
         for i in 0..self.span.start.min(bytes.len()) {
             if bytes[i] == b'\n' {
@@ -61,29 +61,54 @@ impl Diagnostic {
         }
 
         println!("{}: {}", level_str, self.message.white().bold());
-        println!("  {} {}:{}:{}", "-->".blue().bold(), self.file, line_num, col_num);
+        println!(
+            "  {} {}:{}:{}",
+            "-->".blue().bold(),
+            self.file,
+            line_num,
+            col_num
+        );
         println!("   {}", "|".blue().bold());
 
         // Get the current line
-        let line_end = source[line_start..].find('\n').map(|n| line_start + n).unwrap_or(source.len());
+        let line_end = source[line_start..]
+            .find('\n')
+            .map(|n| line_start + n)
+            .unwrap_or(source.len());
         let current_line = &source[line_start..line_end];
 
-        println!("{:2} {} {}", line_num.to_string().blue().bold(), "|".blue().bold(), current_line);
-        
+        println!(
+            "{:2} {} {}",
+            line_num.to_string().blue().bold(),
+            "|".blue().bold(),
+            current_line
+        );
+
         let pointer_space = " ".repeat(col_num - 1);
         let pointer_len = (self.span.end - self.span.start).max(1);
         let pointer = "^".repeat(pointer_len);
-        
+
         let label_str = if let Some(ref l) = self.label {
             format!(" {}", l.red().bold())
         } else {
             "".to_string()
         };
-        
-        println!("   {} {}{}{}", "|".blue().bold(), pointer_space, pointer.red().bold(), label_str);
+
+        println!(
+            "   {} {}{}{}",
+            "|".blue().bold(),
+            pointer_space,
+            pointer.red().bold(),
+            label_str
+        );
 
         if let Some(ref h) = self.help {
-            println!("   {} {} {}", "|".blue().bold(), "=".blue().bold(), format!("{}: {}", "help".white().bold(), h));
+            println!(
+                "   {} {} {}",
+                "|".blue().bold(),
+                "=".blue().bold(),
+                format!("{}: {}", "help".white().bold(), h)
+            );
         }
         println!("   {}", "|".blue().bold());
         println!();
