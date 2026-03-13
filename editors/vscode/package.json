@@ -1,0 +1,35 @@
+{
+    "name": "zenith-vscode",
+    "displayName": "Zenith Language Support",
+    "description": "Syntax highlighting and language configuration for Zenith",
+    "version": "0.1.0",
+    "publisher": "neevets",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "zenith",
+                "aliases": [
+                    "Zenith",
+                    "zenith"
+                ],
+                "extensions": [
+                    ".zen"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "zenith",
+                "scopeName": "source.zenith",
+                "path": "./syntaxes/zenith.tmLanguage.json"
+            }
+        ]
+    }
+}

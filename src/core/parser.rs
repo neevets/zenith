@@ -4,6 +4,12 @@ use crate::core::ast::{
     EnumCase, StructField, MatchArm
 };
 
+#[derive(Debug, Clone)]
+pub struct ParserError {
+    pub message: String,
+    pub span: logos::Span,
+}
+
 #[derive(PartialEq, PartialOrd)]
 enum Precedence {
     Lowest,
@@ -40,7 +46,7 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     cur_token: Token,
     peek_token: Token,
-    pub errors: Vec<String>,
+    pub errors: Vec<ParserError>,
     is_render: bool,
 }
 
@@ -466,7 +472,10 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                self.errors.push(format!("Expected parameter, got {:?}", self.cur_token.token_type));
+                self.errors.push(ParserError {
+                    message: format!("expected parameter, got {:?}", self.cur_token.token_type),
+                    span: self.cur_token.span.clone(),
+                });
             }
         }
 
@@ -496,7 +505,10 @@ impl<'a> Parser<'a> {
             TokenType::Bang | TokenType::Minus => self.parse_prefix_expression(),
             TokenType::LParen => self.parse_grouped_expression(),
             _ => {
-                self.errors.push(format!("No prefix parse function for {:?}", self.cur_token.token_type));
+                self.errors.push(ParserError {
+                    message: format!("no prefix parse function for {:?}", self.cur_token.token_type),
+                    span: self.cur_token.span.clone(),
+                });
                 return Expression::Identifier("error".into());
             }
         };
@@ -889,7 +901,10 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_error(&mut self, t: TokenType) {
-        let msg = format!("Expected next token to be {:?}, got {:?} instead", t, self.peek_token.token_type);
-        self.errors.push(msg);
+        let msg = format!("expected {:?}, found {:?}", t, self.peek_token.token_type);
+        self.errors.push(ParserError {
+            message: msg,
+            span: self.peek_token.span.clone(),
+        });
     }
 }

@@ -1,26 +1,57 @@
 use crate::core::ast::{Program, Statement, Expression, BlockStatement};
 use crate::core::analyzer::LifeCycleMap;
+use std::collections::HashMap;
 
 pub struct Transpiler {
     pub lc_map: Option<LifeCycleMap>,
+    pub module_map: HashMap<String, String>,
+    pub top_level_vars: Vec<String>,
 }
 
 impl Transpiler {
     pub fn new() -> Self {
-        Transpiler { lc_map: None }
+        Transpiler { 
+            lc_map: None,
+            module_map: HashMap::new(),
+            top_level_vars: Vec::new(),
+        }
+    }
+
+    pub fn set_module_map(&mut self, map: HashMap<String, String>) {
+        self.module_map = map;
     }
 
     pub fn set_lifecycle_map(&mut self, m: LifeCycleMap) {
         self.lc_map = Some(m);
     }
 
-    pub fn transpile(&self, program: &Program) -> String {
+    pub fn transpile(&mut self, program: &Program) -> String {
         let mut out = String::new();
+
+        // Pass 1: Collect top-level variables
+        for stmt in &program.statements {
+            if let Statement::Let { name, .. } = stmt {
+                let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
+                self.top_level_vars.push(clean_name);
+            }
+        }
 
         for stmt in &program.imports {
             if let Statement::Import(path) = stmt {
-                let php_path = path.replace(".zen", ".php");
-                out.push_str(&format!("require_once \"{}\";\n", php_path));
+                let php_path = self.module_map.get(path).cloned().unwrap_or_else(|| {
+                    if path.starts_with("http") {
+                         // Fallback for unmapped URLs (should not happen if engine works correctly)
+                         path.replace(".zen", ".php")
+                    } else if path.starts_with("composer:") {
+                         "".into() // Handled by autoloader
+                    } else {
+                         path.replace(".zen", ".php")
+                    }
+                });
+                
+                if !php_path.is_empty() {
+                    out.push_str(&format!("require_once \"{}\";\n", php_path));
+                }
             }
         }
 
@@ -85,7 +116,13 @@ impl Transpiler {
                 let ret = if let Some(ref t) = return_type {
                     if t == "any" { "".into() } else { format!(": {}", t) }
                 } else { "".into() };
-                format!("function {}({}){} {{\n    global $file, $db, $ctx, $db_file;\n{}}}", name, p_list.join(", "), ret, self.transpile_block(body))
+                
+                let mut globals = vec!["$file".to_string(), "$db".to_string(), "$ctx".to_string(), "$db_file".to_string()];
+                globals.extend(self.top_level_vars.clone());
+                globals.sort();
+                globals.dedup();
+                
+                format!("function {}({}){} {{\n    global {};\n{}}}", name, p_list.join(", "), ret, globals.join(", "), self.transpile_block(body))
             }
             Statement::Enum { name, cases } => {
                 let mut out = format!("enum {} {{\n", name);
@@ -132,7 +169,13 @@ impl Transpiler {
 
     pub fn transpile_expression(&self, expr: &Expression) -> String {
         match expr {
-            Expression::Identifier(val) => val.clone(),
+            Expression::Identifier(val) => {
+                let trimmed = val.trim();
+                match trimmed {
+                    "ctx" | "file" | "db" => format!("${}", trimmed),
+                    _ => trimmed.to_string()
+                }
+            },
             Expression::Variable(val) => {
                 let clean_val = val.trim_start_matches('$');
                 format!("${}", clean_val)
@@ -140,8 +183,8 @@ impl Transpiler {
             Expression::IntegerLiteral(val) => val.to_string(),
             Expression::StringLiteral { value, delimiter, is_render } => {
                 let mut val = value.clone();
-                if *is_render && *delimiter == '"' {
-                    val = self.apply_xss_protection(&val);
+                if *delimiter == '"' {
+                    val = self.transpile_template_string(&val, *is_render);
                 }
                 format!("{}{}{}", delimiter, val, delimiter)
             }
@@ -170,9 +213,16 @@ impl Transpiler {
                     "push" => format!("array_push({}, {})", obj, args.join(", ")),
                     "parse" if obj == "json" => format!("json_decode({}, true)", args.join(", ")),
                     "stringify" if obj == "json" => format!("json_encode({})", args.join(", ")),
+                    _ if obj == "native" => {
+                        // Z-Ops: High-performance Rust bridge
+                        // We map this to a special internal call that the Engine catches or 
+                        // just a call to a built-in helper that might use ffi or a CLI hook
+                        format!("z_ops_native_call('{}', [{}])", method, args.join(", "))
+                    }
                     _ => {
                         let mut use_obj = obj;
                         if use_obj == "file" { use_obj = "$file".into(); }
+                        if use_obj == "ctx" { use_obj = "$ctx".into(); }
                         if use_obj == "$ctx" {
                             match method.as_str() {
                                 "query" => if let Some(a) = args.get(0) { return format!("$_GET[{}]", a); } else { return "$_GET".into(); },
@@ -185,7 +235,10 @@ impl Transpiler {
                 }
             }
             Expression::MemberExpression { object, property, is_nullsafe } => {
-                let obj = self.transpile_expression(object);
+                let mut obj = self.transpile_expression(object);
+                if obj == "ctx" { obj = "$ctx".into(); }
+                if obj == "file" { obj = "$file".into(); }
+                
                 let op = if *is_nullsafe { "?->" } else { "->" };
                 if obj == "$ctx" {
                     match property.as_str() {
@@ -299,15 +352,13 @@ impl Transpiler {
             }
         }
     }
-
-    fn apply_xss_protection(&self, input: &str) -> String {
+    fn transpile_template_string(&self, input: &str, escape_html: bool) -> String {
         let mut out = String::new();
         let mut i = 0;
         let bytes = input.as_bytes();
         
         while i < bytes.len() {
-            if bytes[i] == b'{' && i + 1 < bytes.len() && (bytes[i+1] == b'$' || bytes[i+1].is_ascii_alphabetic()) {
-                // Find matching }
+            if bytes[i] == b'{' && i + 1 < bytes.len() {
                 let mut j = i + 1;
                 while j < bytes.len() && bytes[j] != b'}' {
                     j += 1;
@@ -315,10 +366,16 @@ impl Transpiler {
                 
                 if j < bytes.len() {
                     let expr = &input[i+1..j];
-                    // Wrap in htmlspecialchars and use concatenation
-                    out.push_str(&format!("\" . htmlspecialchars((string)({}), ENT_QUOTES, 'UTF-8') . \"", self.wrap_expr_if_needed(expr)));
-                    i = j + 1;
-                    continue;
+                    if self.is_valid_interpolation(expr) {
+                        let transpiled = self.wrap_expr_if_needed(expr);
+                        if escape_html {
+                            out.push_str(&format!("\" . htmlspecialchars((string)({}), ENT_QUOTES, 'UTF-8') . \"", transpiled));
+                        } else {
+                            out.push_str(&format!("{{ ({}) }}", transpiled));
+                        }
+                        i = j + 1;
+                        continue;
+                    }
                 }
             }
             out.push(bytes[i] as char);
@@ -327,13 +384,38 @@ impl Transpiler {
         out
     }
 
+    fn is_valid_interpolation(&self, expr: &str) -> bool {
+        let e = expr.trim();
+        if e.is_empty() { return false; }
+        // If it contains CSS chars like : or ; or multiple spaces, it's probably not a Zenith expression
+        if e.contains(':') || e.contains(';') || e.contains('\n') { return false; }
+        // Simple heuristic: starts with $, ctx, file, native, or an identifier
+        e.starts_with('$') || e.starts_with("ctx") || e.starts_with("file") || e.starts_with("native") || e.chars().next().unwrap_or(' ').is_ascii_alphabetic()
+    }
+
     fn wrap_expr_if_needed(&self, expr: &str) -> String {
-        if expr.starts_with('$') {
-            expr.to_string()
+        let mut e = expr.trim().to_string();
+        if e.starts_with("ctx.") { e = e.replace("ctx.", "$ctx->"); }
+        if e.starts_with("$ctx.") { e = e.replace("$ctx.", "$ctx->"); }
+        if e.starts_with("file.") { e = e.replace("file.", "$file->"); }
+        if e.starts_with("$file.") { e = e.replace("$file.", "$file->"); }
+        if e.starts_with("native.") {
+            let parts: Vec<&str> = e.splitn(2, '.').collect();
+            if parts.len() == 2 {
+                let method = parts[1].split('(').next().unwrap_or("");
+                let args = if parts[1].contains('(') {
+                    parts[1].split('(').nth(1).unwrap_or("").trim_end_matches(')')
+                } else { "" };
+                return format!("z_ops_native_call('{}', [{}])", method, args);
+            }
+        }
+        if !e.starts_with('$') && !e.contains("->") && !e.contains('(') {
+            match e.as_str() {
+                "ctx" | "file" | "db" => format!("${}", e),
+                _ => e
+            }
         } else {
-            // If it's a raw identifier in a template, it might need $
-            // But Zenith usually uses $ for variables.
-            expr.to_string()
+            e
         }
     }
 
@@ -348,18 +430,21 @@ impl Transpiler {
             ("println", "function println($data) {\n    echo $data . \"\\n\";\n}"),
             ("redirect", "function redirect($url) {\n    header(\"Location: \" . $url);\n    exit;\n}"),
             ("z_assert", "function z_assert($condition, $message = \"Assertion failed\") {\n    if ($condition) {\n        echo \"  [OK] Pass: \" . $message . \"\\n\";\n    } else {\n        echo \"  [FAIL] FAIL: \" . $message . \"\\n\";\n        exit(1);\n    }\n}"),
+            ("z_ops_native_call", "function z_ops_native_call($fn, $args) {\n    switch($fn) {\n        case 'crypto_hash': return hash('sha256', $args[0]);\n        default: return 'Rust Native: ' . $fn . ' not implemented yet';\n    }\n}"),
         ];
 
         for (name, body) in functions {
             out.push_str(&format!("if (!function_exists('{}')) {{\n{}\n}}\n\n", name, body));
         }
 
-        out.push_str("class ZenithFile {\n    public function read($path) { return file_get_contents($path); }\n    public function write($path, $data) { return file_put_contents($path, $data); }\n}\n");
-        out.push_str("$file = new ZenithFile();\n");
-        out.push_str("$ctx = new Context();\n");
-        out.push_str("$ctx->path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);\n");
-        out.push_str("$ctx->query = $_GET ?? [];\n");
-        out.push_str("$ctx->body = $_POST ?? [];\n\n");
+        out.push_str("if (!class_exists('ZenithFile')) {\n    class ZenithFile {\n        public function read($path) { return file_get_contents($path); }\n        public function write($path, $data) { return file_put_contents($path, $data); }\n    }\n}\n");
+        out.push_str("if (!isset($file)) { $file = new ZenithFile(); }\n");
+        out.push_str("if (!isset($ctx)) {\n");
+        out.push_str("    $ctx = new Context();\n");
+        out.push_str("    $ctx->path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);\n");
+        out.push_str("    $ctx->query = $_GET ?? [];\n");
+        out.push_str("    $ctx->body = $_POST ?? [];\n");
+        out.push_str("}\n\n");
 
         out
     }

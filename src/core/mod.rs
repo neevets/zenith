@@ -6,3 +6,4 @@ pub mod cache;
 pub mod system;
 pub mod engine;
 pub mod server;
+pub mod diagnostics;

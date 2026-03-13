@@ -1,0 +1,116 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Zenith",
+    "scopeName": "source.zenith",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#variables"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#functions"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.zenith",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.zenith",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.zenith",
+                    "match": "\\b(if|else|while|for|return|match|default|spawn|yield|import|render|middleware|struct|enum)\\b"
+                },
+                {
+                    "name": "keyword.other.zenith",
+                    "match": "\\b(let|native)\\b"
+                },
+                {
+                    "name": "constant.language.zenith",
+                    "match": "\\b(true|false|null)\\b"
+                },
+                {
+                    "name": "storage.type.zenith",
+                    "match": "\\b(int|string|bool|any|void|array|map)\\b"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.zenith",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.zenith",
+                            "match": "\\\\."
+                        },
+                        {
+                            "name": "variable.interpolation.zenith",
+                            "match": "\\{\\$[a-zA-Z_][a-zA-Z0-9_]*\\}"
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.zenith",
+                    "begin": "'",
+                    "end": "'"
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "name": "variable.other.zenith",
+                    "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+                },
+                {
+                    "name": "support.class.zenith",
+                    "match": "\\b(file|db|ctx|json|native)\\b"
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.zenith",
+                    "match": "\\b[0-9]+\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.function.zenith"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

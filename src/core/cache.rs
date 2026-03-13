@@ -56,4 +56,8 @@ impl Cache {
         fs::write(local_path, php_code)?;
         Ok(())
     }
+
+    pub fn get_transpiled_path(&self, source_hash: &str) -> PathBuf {
+        self.base_dir.join("transpiled").join(format!("{}.php", source_hash))
+    }
 }

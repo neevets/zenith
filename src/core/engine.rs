@@ -5,9 +5,13 @@ use crate::core::analyzer::Analyzer;
 use crate::codegen::transpiler::Transpiler;
 use crate::core::cache::Cache;
 use crate::core::system;
+use crate::core::ast::Statement;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
 use std::io::Write;
+use colored::Colorize;
 
 pub struct Options {
     pub allow_read: bool,
@@ -25,8 +29,23 @@ impl Engine {
     }
 
     pub fn transpile(&self, filename: &str) -> anyhow::Result<String> {
-        let abs_path = std::fs::canonicalize(filename)?;
-        let input = std::fs::read_to_string(&abs_path)?;
+        self.transpile_recursive(filename, &mut HashMap::new())
+    }
+
+    fn transpile_recursive(&self, filename: &str, module_map: &mut HashMap<String, String>) -> anyhow::Result<String> {
+        let abs_path = if filename.starts_with("http") {
+             PathBuf::from(filename)
+        } else {
+             std::fs::canonicalize(filename)?
+        };
+        
+        let input = if filename.starts_with("http") {
+             let cm = Cache::new()?;
+             let local_path = cm.get(filename)?;
+             std::fs::read_to_string(local_path)?
+        } else {
+             std::fs::read_to_string(&abs_path)?
+        };
 
         let cm = Cache::new().ok();
         let mut source_hash = String::new();
@@ -35,6 +54,9 @@ impl Engine {
             hasher.update(input.as_bytes());
             source_hash = format!("{:x}", hasher.finalize());
             if let Some(cached_php) = c.get_transpiled(&source_hash) {
+                if filename.starts_with("http") {
+                    module_map.insert(filename.to_string(), c.get_transpiled_path(&source_hash).to_string_lossy().to_string());
+                }
                 return Ok(cached_php);
             }
         }
@@ -44,28 +66,49 @@ impl Engine {
         let program = p.parse_program();
 
         if !p.errors.is_empty() {
-            return Err(anyhow::anyhow!("Parser errors:\n{}", p.errors.join("\n")));
+            use crate::core::diagnostics::Diagnostic;
+            for err in p.errors {
+                let diag = Diagnostic::new_error(&err.message, filename, err.span);
+                diag.render(&input);
+            }
+            return Err(anyhow::anyhow!("Transpilation failed. See diagnostics above."));
         }
 
         let mut a = Analyzer::new();
         let lc_map = a.analyze(&program);
 
         if !lc_map.errors.is_empty() {
-            return Err(anyhow::anyhow!("Quantum Shield blocked execution:\n{}", lc_map.errors.join("\n")));
+            return Err(anyhow::anyhow!("Quantum Shield blocked execution in {}:\n{}", filename, lc_map.errors.join("\n")));
         }
 
-        let t = Transpiler::new();
-        // t.set_lifecycle_map(lc_map); // If implemented in transpiler
+        // Handle imports recursively
+        for import_stmt in &program.imports {
+            if let Statement::Import(path) = import_stmt {
+                if path.starts_with("http") && !module_map.contains_key(path) {
+                    let _ = self.transpile_recursive(path, module_map)?;
+                }
+            }
+        }
 
-        let _dir = abs_path.parent().unwrap();
-        // Handle imports recursively if needed, but for now we'll assume they're handled by the transpiler
-        
+        let mut t = Transpiler::new();
+        t.set_module_map(module_map.clone());
+
         let mut php_code = t.get_php_header();
+        
+        // Detect Composer
+        let composer_path = std::path::Path::new("vendor/autoload.php");
+        if composer_path.exists() {
+            php_code.push_str("require_once __DIR__ . '/vendor/autoload.php';\n");
+        }
+
         php_code.push_str(&t.transpile(&program));
 
         if let Some(ref c) = cm {
             if !source_hash.is_empty() {
                 c.save_transpiled(&source_hash, &php_code)?;
+                if filename.starts_with("http") {
+                    module_map.insert(filename.to_string(), c.get_transpiled_path(&source_hash).to_string_lossy().to_string());
+                }
             }
         }
 
@@ -73,6 +116,10 @@ impl Engine {
     }
 
     pub fn execute(&self, php_code: &str) -> anyhow::Result<String> {
+        self.execute_with_context(php_code, "index.zen", "")
+    }
+
+    pub fn execute_with_context(&self, php_code: &str, filename: &str, zenith_source: &str) -> anyhow::Result<String> {
         let mut tmp_file = NamedTempFile::new_in(".")?;
         tmp_file.write_all(php_code.as_bytes())?;
         let tmp_path = tmp_file.path().to_owned();
@@ -100,7 +147,32 @@ impl Engine {
             .output()?;
 
         if !output.status.success() {
-            return Err(anyhow::anyhow!("PHP Execution Error:\n{}\n\nGenerated PHP:\n{}", String::from_utf8_lossy(&output.stderr), php_code));
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // Try to parse the PHP error for beautiful diagnostics
+            let re = regex::Regex::new(r"PHP (.*?) error: (.*?) in (.*?) on line (\d+)").unwrap();
+            if let Some(caps) = re.captures(&stderr) {
+                let msg = &caps[2];
+                let line: usize = caps[4].parse().unwrap_or(0);
+                
+                // For PHP execution errors, we don't have a precise Zenith span yet
+                // We'll use a dummy span and try to render it if we have the zenith source
+                use crate::core::diagnostics::Diagnostic;
+                let mut diag = Diagnostic::new_error(msg, filename, 0..1);
+                diag = diag.with_help("This error occurred in the generated PHP runner.");
+                
+                if !zenith_source.is_empty() {
+                    diag.render(zenith_source);
+                } else {
+                    // Fallback if we don't have the source
+                    println!("error: {}", msg.red().bold());
+                    println!("  --> {}:{}", filename, line);
+                }
+                
+                return Err(anyhow::anyhow!("Execution failed."));
+            }
+
+            return Err(anyhow::anyhow!("PHP Execution Error:\n{}", stderr));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())

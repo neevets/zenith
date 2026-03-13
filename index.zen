@@ -1,1 +1,12 @@
-println("x");
+// Zenith Error Showcase
+let $usuario = "Crivas";
+let $puntos = 100; // <--- ERROR 1: Falta el punto y coma
+
+render function MostrarPerfil(nombre: string) {
+    // ERROR 2: Intentar usar una variable que no existe (typo)
+    println("Hola, " + $nombe); 
+}
+
+// ERROR 3: Llamar a una función con el tipo de dato incorrecto
+// Nuestro parser espera un 'string', pero le pasamos un entero
+MostrarPerfil($puntos);

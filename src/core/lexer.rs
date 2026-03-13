@@ -141,6 +141,7 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
+    pub span: logos::Span,
 }
 
 pub struct Lexer<'a> {
@@ -156,6 +157,7 @@ impl<'a> Lexer<'a> {
 
     pub fn next_token(&mut self) -> Token {
         let token_type = self.lexer.next().unwrap_or(Ok(TokenType::Eof)).unwrap_or(TokenType::Eof);
+        let span = self.lexer.span();
         let literal = match &token_type {
             TokenType::Literal(s) => s.clone(),
             _ => self.lexer.slice().to_string(),
@@ -163,6 +165,7 @@ impl<'a> Lexer<'a> {
         Token {
             token_type,
             literal,
+            span,
         }
     }
 }

@@ -24,6 +24,11 @@ enum Commands {
         #[arg(default_value = "8080")]
         port: String,
     },
+    Cache {
+        #[arg(short, long)]
+        reload: bool,
+    },
+    Install,
 }
 
 pub fn run_cli() {
@@ -56,6 +61,26 @@ pub fn run_cli() {
             if let Err(e) = rt.block_on(server::start(port)) {
                 println!("[!] Server Error: {}", e);
             }
+        }
+        Commands::Cache { reload } => {
+            if *reload {
+                let home = dirs::home_dir().unwrap();
+                let cache_dir = home.join(".zenith").join("cache");
+                if cache_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&cache_dir);
+                    println!("[Zenith] Cache cleared.");
+                }
+            } else {
+                println!("[Zenith] Cache is active.");
+            }
+        }
+        Commands::Install => {
+            println!("[Zenith] Installing dependencies...");
+            if std::path::Path::new("composer.json").exists() {
+                println!("[Zenith] Detected composer.json, running composer install...");
+                let _ = std::process::Command::new("composer").arg("install").status();
+            }
+            println!("[Zenith] Done.");
         }
     }
 }
