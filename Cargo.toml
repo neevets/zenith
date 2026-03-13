@@ -1,14 +1,14 @@
 [package]
-name = "zenith-core"
+name = "zenith"
 version = "0.1.0"
 edition = "2021"
+default-run = "zenith"
 
 [dependencies]
 # Dependencies for the compiler
 anyhow = "1.0"
 thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }
-inkwell = { version = "0.1.1", features = ["llvm14-0"] } # For native backend (C++ speed)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 logos = "0.13"
@@ -24,3 +24,7 @@ tempfile = "3.8"
 actix-web = "4.4"
 actix-files = "0.6"
 actix-rt = "2.9"
+
+[[bin]]
+name = "zenith"
+path = "src/main.rs"

@@ -1,29 +1,14 @@
-zenith
-bundle_test
-app
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Rust
+/target/
+**/*.rs.bk
 
-core
-*.out
-vendor/
+# Zenith Binaries (Compiled)
+/zenith
 
-.zenith-tmp-*.php
-utils.php
-index.php
-test.php
-*.php
-!utils.zn
-!index.zen
-!test.zen
-
+# IDEs and OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
 .DS_Store
 Thumbs.db
