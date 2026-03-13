@@ -8,6 +8,9 @@ on:
       - 'v*'
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
 
@@ -17,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -31,10 +34,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Build check
-        run: cargo check --all-targets
+        run: cargo check --all-targets --locked
 
       - name: Run tests
-        run: cargo test --all-targets
+        run: cargo test --all-targets --locked
 
   build:
     name: Build ${{ matrix.os }}
@@ -46,17 +49,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: zenith-linux-amd64
+            target_name: zenith-linux-amd64
             bin: zenith
           - os: macos-latest
-            artifact: zenith-macos-arm64
+            target_name: zenith-macos-arm64
             bin: zenith
           - os: windows-latest
-            artifact: zenith-windows-amd64.exe
+            target_name: zenith-windows-amd64
             bin: zenith.exe
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -67,24 +70,28 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Package binary (unix)
+      - name: Package tar.gz (unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp target/release/${{ matrix.bin }} dist/${{ matrix.artifact }}
+          cp target/release/${{ matrix.bin }} ./${{ matrix.bin }}
+          tar -czf dist/${{ matrix.target_name }}.tar.gz ./${{ matrix.bin }}
+          rm ./${{ matrix.bin }}
 
-      - name: Package binary (windows)
+      - name: Package tar.gz (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+          Copy-Item "target/release/${{ matrix.bin }}" "${{ matrix.bin }}"
+          tar -czf "dist/${{ matrix.target_name }}.tar.gz" "${{ matrix.bin }}"
+          Remove-Item "${{ matrix.bin }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: ${{ matrix.target_name }}
+          path: dist/${{ matrix.target_name }}.tar.gz
 
   release:
     name: Publish GitHub Release
@@ -105,4 +112,4 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Zenith ${{ github.ref_name }}
-          files: dist/*
+          files: dist/*.tar.gz
