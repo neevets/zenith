@@ -107,9 +107,10 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Zenith ${{ github.ref_name }}
-          files: dist/*.tar.gz
+      - name: Create or update release with gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --title "Zenith ${{ github.ref_name }}" --notes "Automated release for ${{ github.ref_name }}"
+          gh release upload "${{ github.ref_name }}" dist/*.tar.gz --clobber
