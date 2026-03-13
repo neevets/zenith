@@ -156,7 +156,11 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Token {
-        let token_type = self.lexer.next().unwrap_or(Ok(TokenType::Eof)).unwrap_or(TokenType::Eof);
+        let token_type = self
+            .lexer
+            .next()
+            .unwrap_or(Ok(TokenType::Eof))
+            .unwrap_or(TokenType::Eof);
         let span = self.lexer.span();
         let literal = match &token_type {
             TokenType::Literal(s) => s.clone(),
