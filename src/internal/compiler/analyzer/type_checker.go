@@ -35,8 +35,6 @@ func (tc *TypeChecker) checkStatement(stmt parser.Statement) {
 		}
 		tc.symbols[s.Name.Value] = valType
 	case *parser.FunctionDefinition:
-		// Register function parameters in a local scope
-		// Simplified for now: just check body
 		for _, stmt := range s.Body.Statements {
 			tc.checkStatement(stmt)
 		}
@@ -67,7 +65,6 @@ func (tc *TypeChecker) inferType(exp parser.Expression) string {
 		}
 		return "any"
 	case *parser.InfixExpression:
-		// Primitive inference for math
 		left := tc.inferType(e.Left)
 		right := tc.inferType(e.Right)
 		if left == "int" && right == "int" {
@@ -77,7 +74,6 @@ func (tc *TypeChecker) inferType(exp parser.Expression) string {
 	case *parser.ArrayLiteral:
 		return "array"
 	case *parser.CallExpression:
-		// We'd need a function symbol table for better inference
 		return "any"
 	default:
 		return "any"

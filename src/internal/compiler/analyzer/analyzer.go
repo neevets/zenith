@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"strings"
 	"github.com/neevets/zenith/src/internal/compiler/parser"
 )
 
@@ -17,19 +18,17 @@ type LifeCycleAnalyzer struct {
 	inLoop   bool
 }
 
-
 func New() *LifeCycleAnalyzer {
 	return &LifeCycleAnalyzer{
 		lastUses: make(map[string]parser.Statement),
-		lcMap:    &LifeCycleMap{
+		lcMap: &LifeCycleMap{
 			LastUses: make(map[parser.Statement][]string),
 			Errors:   []string{},
 		},
-		sm: NewSchemaManager("zenith.schema.json"),
+		sm: NewSchemaManager("schema.json"),
 		tc: NewTypeChecker(),
 	}
 }
-
 
 func (a *LifeCycleAnalyzer) Analyze(program *parser.Program) *LifeCycleMap {
 	a.traverseProgram(program)
@@ -38,7 +37,6 @@ func (a *LifeCycleAnalyzer) Analyze(program *parser.Program) *LifeCycleMap {
 	a.lcMap.Errors = append(a.lcMap.Errors, typeErrors...)
 	
 	for varName, stmt := range a.lastUses {
-
 		a.lcMap.LastUses[stmt] = append(a.lcMap.LastUses[stmt], varName)
 	}
 	
@@ -46,13 +44,8 @@ func (a *LifeCycleAnalyzer) Analyze(program *parser.Program) *LifeCycleMap {
 }
 
 func (a *LifeCycleAnalyzer) traverseProgram(program *parser.Program) {
-	if program.Middleware != nil {
-		for _, stmt := range program.Middleware.Statements {
-			a.analyzeStatement(stmt)
-		}
-	}
 	for _, stmt := range program.Statements {
-		a.analyzeStatement(stmt)
+		a.analyzeStatementWithSecurity(stmt)
 	}
 }
 
@@ -60,84 +53,91 @@ func (a *LifeCycleAnalyzer) analyzeStatement(stmt parser.Statement) {
 	switch s := stmt.(type) {
 	case *parser.LetStatement:
 		a.analyzeExpression(s.Value, stmt)
+		a.lastUses[s.Name.Value] = stmt
 	case *parser.ExpressionStatement:
 		a.analyzeExpression(s.Expression, stmt)
 	case *parser.ReturnStatement:
 		a.analyzeExpression(s.ReturnValue, stmt)
-	case *parser.FunctionDefinition:
-		innerAnalyzer := New()
-		innerMap := innerAnalyzer.AnalyzeBlock(s.Body)
-		for innerStmt, variables := range innerMap.LastUses {
-			a.lcMap.LastUses[innerStmt] = variables
+	case *parser.BlockStatement:
+		for _, bs := range s.Statements {
+			a.analyzeStatement(bs)
 		}
-		a.lcMap.Errors = append(a.lcMap.Errors, innerMap.Errors...)
 	case *parser.IfStatement:
 		a.analyzeExpression(s.Condition, stmt)
-		a.AnalyzeBlock(s.Consequence)
+		a.analyzeStatement(s.Consequence)
 		if s.Alternative != nil {
-			a.AnalyzeBlock(s.Alternative)
+			a.analyzeStatement(s.Alternative)
 		}
-	case *parser.WhileStatement:
-		a.analyzeExpression(s.Condition, stmt)
-		oldInLoop := a.inLoop
-		a.inLoop = true
-		for _, loopStmt := range s.Body.Statements {
-			a.analyzeStatement(loopStmt)
-		}
-		a.inLoop = oldInLoop
 	}
-}
-
-func (a *LifeCycleAnalyzer) AnalyzeBlock(block *parser.BlockStatement) *LifeCycleMap {
-	for _, stmt := range block.Statements {
-		a.analyzeStatement(stmt)
-	}
-	
-	for varName, stmt := range a.lastUses {
-		a.lcMap.LastUses[stmt] = append(a.lcMap.LastUses[stmt], varName)
-	}
-	
-	return a.lcMap
 }
 
 func (a *LifeCycleAnalyzer) analyzeExpression(exp parser.Expression, parentStmt parser.Statement) {
+	if exp == nil {
+		return
+	}
 	switch e := exp.(type) {
 	case *parser.Variable:
-		if !a.inLoop {
-			a.lastUses[e.Value] = parentStmt
-		}
+		a.lastUses[e.Value] = parentStmt
 	case *parser.CallExpression:
-		for _, arg := range e.Arguments {
-			a.analyzeExpression(arg, parentStmt)
-		}
 		a.analyzeExpression(e.Function, parentStmt)
-	case *parser.MethodCallExpression:
-		a.analyzeExpression(e.Object, parentStmt)
 		for _, arg := range e.Arguments {
 			a.analyzeExpression(arg, parentStmt)
 		}
-	case *parser.NullCoalesceExpression:
-		a.analyzeExpression(e.Left, parentStmt)
-		a.analyzeExpression(e.Right, parentStmt)
-	case *parser.SqlQueryExpression:
-		for _, arg := range e.Args {
-			a.analyzeExpression(arg, parentStmt)
-		}
-		if a.sm != nil && e.Table != "" {
-			errs := a.sm.ValidateQuery(e.Table, e.Columns)
-			a.lcMap.Errors = append(a.lcMap.Errors, errs...)
-		}
-	case *parser.ArrayLiteral:
-		for _, element := range e.Elements {
-			a.analyzeExpression(element, parentStmt)
-		}
-	case *parser.MemberExpression:
-		a.analyzeExpression(e.Object, parentStmt)
 	case *parser.InfixExpression:
 		a.analyzeExpression(e.Left, parentStmt)
 		a.analyzeExpression(e.Right, parentStmt)
 	case *parser.AssignExpression:
 		a.analyzeExpression(e.Value, parentStmt)
 		a.analyzeExpression(e.Left, parentStmt)
+	case *parser.IndexExpression:
+		a.analyzeExpression(e.Left, parentStmt)
+		a.analyzeExpression(e.Index, parentStmt)
+	case *parser.MemberExpression:
+		a.analyzeExpression(e.Object, parentStmt)
+	case *parser.MethodCallExpression:
+		a.analyzeExpression(e.Object, parentStmt)
+		for _, arg := range e.Arguments {
+			a.analyzeExpression(arg, parentStmt)
+		}
+	case *parser.ArrayLiteral:
+		for _, el := range e.Elements {
+			a.analyzeExpression(el, parentStmt)
+		}
+	case *parser.PipeExpression:
+		a.analyzeExpression(e.Left, parentStmt)
+		a.analyzeExpression(e.Right, parentStmt)
 	}
 }
+
+func (a *LifeCycleAnalyzer) checkSecurity(exp parser.Expression) {
+	switch e := exp.(type) {
+	case *parser.SqlQueryExpression:
+		if strings.Contains(e.Query, "$") || strings.Contains(e.Query, "{") {
+			a.lcMap.Errors = append(a.lcMap.Errors, "Quantum Shield Alert: Potential SQL Injection detected. Use parameter binding instead of variable interpolation.")
+		}
+	case *parser.MethodCallExpression:
+		if ident, ok := e.Object.(*parser.Identifier); ok && ident.Value == "file" {
+			if e.Method.Value == "read" || e.Method.Value == "write" {
+				if len(e.Arguments) > 0 {
+					if lit, ok := e.Arguments[0].(*parser.StringLiteral); ok {
+						if strings.Contains(lit.Value, "..") {
+							a.lcMap.Errors = append(a.lcMap.Errors, "Quantum Shield Alert: Potential Path Traversal detected in file access.")
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func (a *LifeCycleAnalyzer) analyzeStatementWithSecurity(stmt parser.Statement) {
+	a.analyzeStatement(stmt)
+	switch s := stmt.(type) {
+	case *parser.ExpressionStatement:
+		a.checkSecurity(s.Expression)
+	case *parser.LetStatement:
+		a.checkSecurity(s.Value)
+	}
+}
+
+

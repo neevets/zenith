@@ -7,33 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/neevets/zenith/src/internal/compiler/lexer"
-	"github.com/neevets/zenith/src/internal/compiler/parser"
-	"github.com/neevets/zenith/src/internal/compiler/transpiler"
-	"github.com/neevets/zenith/src/internal/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/engine"
 )
 
 func Bundle(filename string, output string) error {
-	input, err := ioutil.ReadFile(filename)
+	e := engine.New(engine.Options{})
+	phpCode, err := e.Transpile(filename)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return err
 	}
-
-	l := lexer.New(string(input))
-	p := parser.New(l)
-	program := p.ParseProgram()
-
-	if len(p.Errors()) != 0 {
-		return fmt.Errorf("parsing failed")
-	}
-
-	a := analyzer.New()
-	lcMap := a.Analyze(program)
-
-	t := transpiler.New()
-	t.SetLifeCycleMap(lcMap)
-	
-	phpCode := t.GetPHPHeader() + t.Transpile(program)
 
 	tmpDir, err := ioutil.TempDir("", "zenith-bundle-*")
 	if err != nil {
@@ -55,6 +37,7 @@ import (
     "io/ioutil"
     "os"
     "os/exec"
+    "path/filepath"
     "strings"
 )
 
@@ -78,9 +61,22 @@ func main() {
     phpBin := "php"
     if _, err := exec.LookPath("php"); err != nil {
         home, _ := os.UserHomeDir()
-        localPhp := home + "/.zenith/bin/php"
-        if _, err := os.Stat(localPhp); err == nil {
-            phpBin = localPhp
+        localPaths := []string{
+            filepath.Join(home, ".zenith", "bin", "php"),
+            "/usr/local/bin/php",
+            "/usr/bin/php",
+        }
+        found := false
+        for _, path := range localPaths {
+            if _, err := os.Stat(path); err == nil {
+                phpBin = path
+                found = true
+                break
+            }
+        }
+        if !found {
+            fmt.Printf("Zenith Preview Mode (PHP not found in system)\n\nGenerated PHP:\n%%s\n", phpCode)
+            return
         }
     }
 

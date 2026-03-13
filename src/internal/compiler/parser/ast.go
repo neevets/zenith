@@ -221,6 +221,16 @@ type WhileStatement struct {
 func (ws *WhileStatement) statementNode()       {}
 func (ws *WhileStatement) TokenLiteral() string { return ws.Token.Literal }
 
+type ForStatement struct {
+	Token    lexer.Token
+	Variable string
+	Iterable Expression
+	Body     *BlockStatement
+}
+
+func (fs *ForStatement) statementNode()       {}
+func (fs *ForStatement) TokenLiteral() string { return fs.Token.Literal }
+
 type AssignExpression struct {
 	Token lexer.Token
 	Left  Expression

@@ -50,6 +50,8 @@ const (
 	TOKEN_READONLY  TokenType = "READONLY"
 	TOKEN_AND       TokenType = "AND"
 	TOKEN_OR        TokenType = "OR"
+	TOKEN_FOR       TokenType = "FOR"
+	TOKEN_IN        TokenType = "IN"
 	TOKEN_EOF       TokenType = "EOF"
 	TOKEN_ILLEGAL   TokenType = "ILLEGAL"
 )
@@ -292,6 +294,8 @@ var keywords = map[string]TokenType{
 	"if":       TOKEN_IF,
 	"else":     TOKEN_ELSE,
 	"while":    TOKEN_WHILE,
+	"for":      TOKEN_FOR,
+	"in":       TOKEN_IN,
 	"error":    TOKEN_IDENT,
 	"SELECT":   TOKEN_IDENT,
 	"FROM":     TOKEN_IDENT,

@@ -5,31 +5,20 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os/exec"
 	"strings"
 
-	"github.com/neevets/zenith/src/internal/compiler/lexer"
-	"github.com/neevets/zenith/src/internal/compiler/parser"
-	"github.com/neevets/zenith/src/internal/compiler/transpiler"
-	"github.com/neevets/zenith/src/internal/compiler/analyzer"
+	"github.com/neevets/zenith/src/internal/engine"
 )
 
 func transpileLibraries() {
 	files, _ := ioutil.ReadDir(".")
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".zen") {
-			input, err := ioutil.ReadFile(f.Name())
+			e := engine.New(engine.Options{})
+			phpCode, err := e.Transpile(f.Name())
 			if err != nil {
 				continue
 			}
-			l := lexer.New(string(input))
-			p := parser.New(l)
-			program := p.ParseProgram()
-			a := analyzer.New()
-			lcMap := a.Analyze(program)
-			t := transpiler.New()
-			t.SetLifeCycleMap(lcMap)
-			phpCode := t.GetPHPHeader() + t.Transpile(program)
 			phpPath := strings.Replace(f.Name(), ".zen", ".php", 1)
 			ioutil.WriteFile(phpPath, []byte(phpCode), 0644)
 		}
@@ -50,65 +39,36 @@ func handleZenith(w http.ResponseWriter, r *http.Request) {
 	transpileLibraries()
 
 	fullPath := "." + path
-	input, err := ioutil.ReadFile(fullPath)
+	e := engine.New(engine.Options{
+		AllowRead: true,
+		AllowNet:  true,
+		AllowEnv:  true,
+	})
+
+	phpCode, err := e.Transpile(fullPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("File not found: %s", fullPath), http.StatusNotFound)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	l := lexer.New(string(input))
-	p := parser.New(l)
-	program := p.ParseProgram()
-
-	if len(p.Errors()) != 0 {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "Parser errors in %s:\n", fullPath)
-		for _, msg := range p.Errors() {
-			fmt.Fprintf(w, "\t%s\n", msg)
-		}
-		return
-	}
-
-	a := analyzer.New()
-	lcMap := a.Analyze(program)
-
-	t := transpiler.New()
-	t.SetLifeCycleMap(lcMap)
-	
-	ctxInit := `
+	ctxInit := fmt.Sprintf(`
 $ctx = new Context();
+$ctx->path = "%s";
 $ctx->query = (object)$_GET;
 $ctx->body = (object)$_POST;
 $db = null;
-`
-	phpCode := t.GetPHPHeader() + ctxInit + t.Transpile(program)
+`, path)
+	phpCode = strings.Replace(phpCode, "<?php", "<?php\n"+ctxInit, 1)
 
-	tmpFile, err := ioutil.TempFile(".", ".zenith-tmp-*.php")
-	if err != nil {
-		http.Error(w, "Failed to create temp file", http.StatusInternalServerError)
-		return
-	}
-
-	if _, err := tmpFile.Write([]byte(phpCode)); err != nil {
-		http.Error(w, "Failed to write to temp file", http.StatusInternalServerError)
-		return
-	}
-	tmpFile.Close()
-
-	cmd := exec.Command("php", tmpFile.Name())
-	output, err := cmd.CombinedOutput()
+	output, err := e.Execute(phpCode)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain")
-		if strings.Contains(err.Error(), "executable file not found") {
-			fmt.Fprintf(w, "Zenith Preview Mode (PHP not found in system)\n\nGenerated PHP:\n%s", phpCode)
-		} else {
-			fmt.Fprintf(w, "PHP Execution Error (%v):\n%s\n\nGenerated PHP:\n%s", err, string(output), phpCode)
-		}
+		fmt.Fprintf(w, "%v", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	w.Write(output)
+	w.Write([]byte(output))
 }
 
 func Start(port string) {

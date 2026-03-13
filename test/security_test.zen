@@ -1,0 +1,6 @@
+// This should be blocked by Quantum Shield Pro
+let $table = "users";
+let $query = db.query(SELECT * FROM $table);
+
+// This should also be blocked
+file.read("../../../etc/passwd");

@@ -8,7 +8,6 @@ import (
 	"github.com/neevets/zenith/src/internal/compiler/analyzer"
 )
 
-
 type Transpiler struct {
 	lcMap *analyzer.LifeCycleMap
 }
@@ -158,6 +157,9 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 				return "$_POST"
 			}
 		}
+		if obj == "file" {
+			obj = "$file"
+		}
 		op := "->"
 		if n.IsNullsafe {
 			op = "?->"
@@ -240,6 +242,9 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 
 	case *parser.WhileStatement:
 		return fmt.Sprintf("while (%s) {\n%s}", t.Transpile(n.Condition), t.Transpile(n.Body))
+
+	case *parser.ForStatement:
+		return fmt.Sprintf("foreach (%s as $%s) {\n%s}", t.Transpile(n.Iterable), n.Variable, t.Transpile(n.Body))
 
 	case *parser.AssignExpression:
 		return fmt.Sprintf("%s = %s", t.Transpile(n.Left), t.Transpile(n.Value))
@@ -351,7 +356,48 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 }
 
 func (t *Transpiler) GetPHPHeader() string {
-	return "<?php\n\nif (!class_exists('Context')) { class Context { public $query; public $body; } }\n\nfunction fetch($url) {\n    $opts = [\"http\" => [\"header\" => \"User-Agent: ZenithRuntime/1.0\\r\\n\"]];\n    return file_get_contents($url, false, stream_context_create($opts));\n}\n\n"
+	return `<?php
+
+if (!class_exists('Context')) { class Context { public $path; public $query; public $body; } }
+
+function fetch($url) {
+    $opts = ["http" => ["header" => "User-Agent: ZenithRuntime/1.0\r\n"]];
+    return file_get_contents($url, false, stream_context_create($opts));
+}
+
+function json($data) {
+    return is_string($data) ? json_decode($data, true) : json_encode($data);
+}
+
+function env($key) {
+    return getenv($key);
+}
+
+function println($data) {
+    echo $data . "\n";
+}
+
+function redirect($url) {
+    header("Location: " . $url);
+    exit;
+}
+
+function z_assert($condition, $message = "Assertion failed") {
+    if ($condition) {
+        echo "  [OK] Pass: " . $message . "\n";
+    } else {
+        echo "  [FAIL] FAIL: " . $message . "\n";
+        exit(1);
+    }
+}
+
+class ZenithFile {
+    public function read($path) { return file_get_contents($path); }
+    public function write($path, $data) { return file_put_contents($path, $data); }
+}
+$file = new ZenithFile();
+
+`
 }
 
 func (t *Transpiler) applyXSSProtection(input string) string {

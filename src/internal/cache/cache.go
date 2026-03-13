@@ -38,7 +38,6 @@ func (c *Cache) Get(url string) (string, error) {
 		return localPath, nil
 	}
 
-
 	fmt.Printf("Downloading %s...\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -60,4 +59,24 @@ func (c *Cache) Get(url string) (string, error) {
 	}
 
 	return localPath, nil
+}
+
+func (c *Cache) GetTranspiled(sourceHash string) (string, bool) {
+	localPath := filepath.Join(c.BaseDir, "transpiled", sourceHash+".php")
+	if _, err := os.Stat(localPath); err == nil {
+		data, err := ioutil.ReadFile(localPath)
+		if err == nil {
+			return string(data), true
+		}
+	}
+	return "", false
+}
+
+func (c *Cache) SaveTranspiled(sourceHash string, phpCode string) error {
+	dir := filepath.Join(c.BaseDir, "transpiled")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	localPath := filepath.Join(dir, sourceHash+".php")
+	return ioutil.WriteFile(localPath, []byte(phpCode), 0644)
 }

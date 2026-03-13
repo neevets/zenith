@@ -103,6 +103,8 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseIfStatement()
 	case lexer.TOKEN_WHILE:
 		return p.parseWhileStatement()
+	case lexer.TOKEN_FOR:
+		return p.parseForStatement()
 	case lexer.TOKEN_YIELD:
 		return p.parseYieldStatement()
 	case lexer.TOKEN_ENUM:
@@ -218,6 +220,24 @@ func (p *Parser) parseWhileStatement() *WhileStatement {
 	if !p.expectPeek(lexer.TOKEN_RPAREN) {
 		return nil
 	}
+	if !p.expectPeek(lexer.TOKEN_LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseForStatement() *ForStatement {
+	stmt := &ForStatement{Token: p.curToken}
+	if !p.expectPeek(lexer.TOKEN_VAR) {
+		return nil
+	}
+	stmt.Variable = p.curToken.Literal
+	if !p.expectPeek(lexer.TOKEN_IN) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Iterable = p.ParseExpression(LOWEST)
 	if !p.expectPeek(lexer.TOKEN_LBRACE) {
 		return nil
 	}
@@ -531,7 +551,11 @@ func (p *Parser) parseSqlQueryExpression(token lexer.Token) Expression {
 			if query.Len() > 0 && p.curToken.Literal != "," && p.curToken.Literal != "." {
 				query.WriteString(" ")
 			}
-			query.WriteString(p.curToken.Literal)
+			literal := p.curToken.Literal
+			if p.curToken.Type == lexer.TOKEN_VAR {
+				literal = "$" + literal
+			}
+			query.WriteString(literal)
 		}
 		p.nextToken()
 	}
