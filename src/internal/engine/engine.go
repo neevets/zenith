@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"path/filepath"
+
 	"github.com/neevets/zenith/src/internal/compiler/lexer"
 	"github.com/neevets/zenith/src/internal/compiler/parser"
 	"github.com/neevets/zenith/src/internal/compiler/transpiler"
@@ -31,7 +33,8 @@ func New(opts Options) *Engine {
 }
 
 func (e *Engine) Transpile(filename string) (string, error) {
-	input, err := ioutil.ReadFile(filename)
+	absPath, _ := filepath.Abs(filename)
+	input, err := ioutil.ReadFile(absPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
@@ -48,6 +51,7 @@ func (e *Engine) Transpile(filename string) (string, error) {
 	l := lexer.New(string(input))
 	p := parser.New(l)
 	program := p.ParseProgram()
+	fmt.Printf("ENGINE: ParseProgram finished for %s, errors=%d\n", filename, len(p.Errors()))
 
 	if len(p.Errors()) != 0 {
 		var errMsgs []string
@@ -70,6 +74,26 @@ func (e *Engine) Transpile(filename string) (string, error) {
 
 	t := transpiler.New()
 	t.SetLifeCycleMap(lcMap)
+
+	dir := filepath.Dir(absPath)
+	for _, imp := range program.Imports {
+		ext := strings.HasSuffix(imp.Path, ".zen")
+		if ext {
+			impAbs := imp.Path
+			if !filepath.IsAbs(impAbs) {
+				impAbs = filepath.Join(dir, imp.Path)
+			}
+			php, err := e.Transpile(impAbs)
+			if err != nil {
+				return "", fmt.Errorf("failed to transpile import %s: %w", imp.Path, err)
+			}
+			phpPath := strings.Replace(impAbs, ".zen", ".php", 1)
+			imp.AbsPath = phpPath
+			if err := ioutil.WriteFile(phpPath, []byte(php), 0644); err != nil {
+				return "", fmt.Errorf("failed to write transpiled file %s: %w", phpPath, err)
+			}
+		}
+	}
 	
 	phpCode := t.GetPHPHeader() + t.Transpile(program)
 
@@ -95,7 +119,7 @@ func (e *Engine) Execute(phpCode string) (string, error) {
 	phpArgs := []string{}
 	
 	if !e.opts.AllowRead {
-		phpArgs = append(phpArgs, "-d", "open_basedir="+tmpFile.Name())
+		phpArgs = append(phpArgs, "-d", "open_basedir=.:"+tmpFile.Name())
 	}
 
 	if !e.opts.AllowNet {

@@ -68,6 +68,16 @@ func (a *LifeCycleAnalyzer) analyzeStatement(stmt parser.Statement) {
 		if s.Alternative != nil {
 			a.analyzeStatement(s.Alternative)
 		}
+	case *parser.ForStatement:
+		a.inLoop = true
+		a.analyzeExpression(s.Iterable, stmt)
+		a.analyzeStatement(s.Body)
+		a.inLoop = false
+	case *parser.WhileStatement:
+		a.inLoop = true
+		a.analyzeExpression(s.Condition, stmt)
+		a.analyzeStatement(s.Body)
+		a.inLoop = false
 	}
 }
 
@@ -106,6 +116,33 @@ func (a *LifeCycleAnalyzer) analyzeExpression(exp parser.Expression, parentStmt 
 	case *parser.PipeExpression:
 		a.analyzeExpression(e.Left, parentStmt)
 		a.analyzeExpression(e.Right, parentStmt)
+	case *parser.MapLiteral:
+		for _, pair := range e.Pairs {
+			a.analyzeExpression(pair.Key, parentStmt)
+			a.analyzeExpression(pair.Value, parentStmt)
+		}
+	case *parser.PrefixExpression:
+		a.analyzeExpression(e.Right, parentStmt)
+	case *parser.MatchExpression:
+		a.analyzeExpression(e.Condition, parentStmt)
+		for _, arm := range e.Arms {
+			for _, val := range arm.Values {
+				a.analyzeExpression(val, parentStmt)
+			}
+			a.analyzeExpression(arm.Result, parentStmt)
+		}
+	case *parser.SpawnExpression:
+		if expr, ok := e.Body.(parser.Expression); ok {
+			a.analyzeExpression(expr, parentStmt)
+		}
+	case *parser.ArrowFunctionExpression:
+		if expr, ok := e.Body.(parser.Expression); ok {
+			a.analyzeExpression(expr, parentStmt)
+		}
+	case *parser.SqlQueryExpression:
+		for _, arg := range e.Args {
+			a.analyzeExpression(arg, parentStmt)
+		}
 	}
 }
 

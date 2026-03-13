@@ -16,6 +16,7 @@ const (
 	COMPARE
 	SUM
 	PRODUCT
+	PREFIX
 	CALL
 	INDEX
 	DOT
@@ -428,6 +429,12 @@ func (p *Parser) ParseExpression(precedence int) Expression {
 		leftExp = p.parseArrowFunctionExpression()
 	case lexer.TOKEN_SPAWN:
 		leftExp = p.parseSpawnExpression()
+	case lexer.TOKEN_LBRACE:
+		leftExp = p.parseMapLiteral()
+	case lexer.TOKEN_BANG, lexer.TOKEN_MINUS:
+		leftExp = p.parsePrefixExpression()
+	case lexer.TOKEN_LPAREN:
+		leftExp = p.parseGroupedExpression()
 	}
 	if leftExp == nil {
 		return nil
@@ -460,6 +467,25 @@ func (p *Parser) ParseExpression(precedence int) Expression {
 		}
 	}
 	return leftExp
+}
+
+func (p *Parser) parsePrefixExpression() Expression {
+	exp := &PrefixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+	}
+	p.nextToken()
+	exp.Right = p.ParseExpression(PREFIX)
+	return exp
+}
+
+func (p *Parser) parseGroupedExpression() Expression {
+	p.nextToken()
+	exp := p.ParseExpression(LOWEST)
+	if !p.expectPeek(lexer.TOKEN_RPAREN) {
+		return nil
+	}
+	return exp
 }
 
 func (p *Parser) parseIntegerLiteral() Expression {
@@ -676,12 +702,59 @@ func (p *Parser) parseExpressionList(end lexer.TokenType) []Expression {
 	for p.peekTokenIs(lexer.TOKEN_COMMA) {
 		p.nextToken()
 		p.nextToken()
-		list = append(list, p.ParseExpression(0))
+		list = append(list, p.ParseExpression(LOWEST))
 	}
 	if !p.expectPeek(end) {
 		return nil
 	}
 	return list
+}
+
+func (p *Parser) parseMapLiteral() Expression {
+	lit := &MapLiteral{Token: p.curToken}
+	lit.Pairs = []*MapPair{}
+
+	if p.peekTokenIs(lexer.TOKEN_RBRACE) {
+		p.nextToken()
+		return lit
+	}
+
+	for !p.peekTokenIs(lexer.TOKEN_RBRACE) && !p.peekTokenIs(lexer.TOKEN_EOF) {
+		p.nextToken() // move to key
+		pair := &MapPair{}
+		
+		if p.curTokenIs(lexer.TOKEN_IDENT) {
+			pair.Key = &StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
+		} else if p.curTokenIs(lexer.TOKEN_LITERAL) {
+			pair.Key = &StringLiteral{
+				Token:     p.curToken,
+				Value:     p.curToken.Literal,
+				Delimiter: p.curToken.Delimiter,
+			}
+		} else {
+			pair.Key = p.ParseExpression(LOWEST)
+		}
+
+		if !p.expectPeek(lexer.TOKEN_COLON) {
+			return nil
+		}
+
+		p.nextToken() // move to value
+		pair.Value = p.ParseExpression(LOWEST)
+		lit.Pairs = append(lit.Pairs, pair)
+
+		if p.peekTokenIs(lexer.TOKEN_COMMA) {
+			p.nextToken()
+		} else {
+			break
+		}
+	}
+
+	if !p.expectPeek(lexer.TOKEN_RBRACE) {
+		return nil
+	}
+
+	return lit
 }
 
 func (p *Parser) curTokenIs(t lexer.TokenType) bool {

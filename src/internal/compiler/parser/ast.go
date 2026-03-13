@@ -44,8 +44,9 @@ func (f *FunctionDefinition) statementNode()       {}
 func (f *FunctionDefinition) TokenLiteral() string { return f.Token.Literal }
 
 type ImportStatement struct {
-	Token lexer.Token
-	Path  string
+	Token   lexer.Token
+	Path    string
+	AbsPath string
 }
 
 func (is *ImportStatement) statementNode()       {}
@@ -323,4 +324,26 @@ type StructField struct {
 	Name       string
 	Type       string
 	IsReadonly bool
+}
+
+type PrefixExpression struct {
+	Token    lexer.Token
+	Operator string
+	Right    Expression
+}
+
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Literal }
+
+type MapLiteral struct {
+	Token lexer.Token
+	Pairs []*MapPair
+}
+
+func (ml *MapLiteral) expressionNode()      {}
+func (ml *MapLiteral) TokenLiteral() string { return ml.Token.Literal }
+
+type MapPair struct {
+	Key   Expression
+	Value Expression
 }

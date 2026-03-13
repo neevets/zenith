@@ -25,8 +25,11 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 	case *parser.Program:
 		var out strings.Builder
 		for _, imp := range n.Imports {
-			phpPath := strings.Replace(imp.Path, ".zen", ".php", 1)
-			out.WriteString(fmt.Sprintf("require_once \"%s\";\n", phpPath))
+			path := imp.AbsPath
+			if path == "" {
+				path = strings.Replace(imp.Path, ".zen", ".php", 1)
+			}
+			out.WriteString(fmt.Sprintf("require_once \"%s\";\n", path))
 		}
 		if len(n.Imports) > 0 {
 			out.WriteString("\n")
@@ -39,7 +42,9 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 			if t.lcMap != nil {
 				if vars, ok := t.lcMap.LastUses[stmt]; ok {
 					for _, v := range vars {
-						out.WriteString(fmt.Sprintf("unset($%s);\n", v))
+						if v != "ctx" && !strings.HasPrefix(v, "db") && v != "file" {
+							out.WriteString(fmt.Sprintf("unset($%s);\n", v))
+						}
 					}
 				}
 			}
@@ -65,7 +70,7 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		if n.ReturnType != "" {
 			out.WriteString(": " + n.ReturnType)
 		}
-		out.WriteString(" {\n" + t.Transpile(n.Body) + "}\n")
+		out.WriteString(" {\n    global $file, $db, $ctx, $db_path;\n" + t.Transpile(n.Body) + "}\n")
 		return out.String()
 
 	case *parser.LetStatement:
@@ -78,7 +83,9 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 			if t.lcMap != nil {
 				if vars, ok := t.lcMap.LastUses[stmt]; ok {
 					for _, v := range vars {
-						out.WriteString(fmt.Sprintf("    unset($%s);\n", v))
+						if v != "ctx" {
+							out.WriteString(fmt.Sprintf("    unset($%s);\n", v))
+						}
 					}
 				}
 			}
@@ -335,6 +342,7 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		out.WriteString("}\n")
 		return out.String()
 
+
 	case *parser.StructDefinition:
 		var out strings.Builder
 		out.WriteString(fmt.Sprintf("class %s {\n", n.Name.Value))
@@ -351,8 +359,21 @@ func (t *Transpiler) Transpile(node parser.Node) string {
 		}
 		out.WriteString("}\n")
 		return out.String()
+
+	case *parser.MapLiteral:
+		pairs := []string{}
+		for _, pair := range n.Pairs {
+			pairs = append(pairs, fmt.Sprintf("%s => %s", t.Transpile(pair.Key), t.Transpile(pair.Value)))
+		}
+		return "[" + strings.Join(pairs, ", ") + "]"
+	case *parser.PrefixExpression:
+		return t.transpilePrefixExpression(n)
 	}
 	return ""
+}
+
+func (t *Transpiler) transpilePrefixExpression(pe *parser.PrefixExpression) string {
+	return "(" + pe.Operator + t.Transpile(pe.Right) + ")"
 }
 
 func (t *Transpiler) GetPHPHeader() string {
@@ -360,28 +381,39 @@ func (t *Transpiler) GetPHPHeader() string {
 
 if (!class_exists('Context')) { class Context { public $path; public $query; public $body; } }
 
+if (!function_exists('fetch')) {
 function fetch($url) {
     $opts = ["http" => ["header" => "User-Agent: ZenithRuntime/1.0\r\n"]];
     return file_get_contents($url, false, stream_context_create($opts));
 }
+}
 
+if (!function_exists('json')) {
 function json($data) {
     return is_string($data) ? json_decode($data, true) : json_encode($data);
 }
+}
 
+if (!function_exists('env')) {
 function env($key) {
     return getenv($key);
 }
+}
 
+if (!function_exists('println')) {
 function println($data) {
     echo $data . "\n";
 }
+}
 
+if (!function_exists('redirect')) {
 function redirect($url) {
     header("Location: " . $url);
     exit;
 }
+}
 
+if (!function_exists('z_assert')) {
 function z_assert($condition, $message = "Assertion failed") {
     if ($condition) {
         echo "  [OK] Pass: " . $message . "\n";
@@ -390,12 +422,19 @@ function z_assert($condition, $message = "Assertion failed") {
         exit(1);
     }
 }
+}
 
+if (!class_exists('ZenithFile')) {
 class ZenithFile {
     public function read($path) { return file_get_contents($path); }
     public function write($path, $data) { return file_put_contents($path, $data); }
 }
+}
 $file = new ZenithFile();
+$ctx = new Context();
+$ctx->path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+$ctx->query = $_GET ?? [];
+$ctx->body = $_POST ?? [];
 
 `
 }

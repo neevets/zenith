@@ -73,6 +73,13 @@ func (tc *TypeChecker) inferType(exp parser.Expression) string {
 		return "any"
 	case *parser.ArrayLiteral:
 		return "array"
+	case *parser.MapLiteral:
+		return "map"
+	case *parser.PrefixExpression:
+		if e.Operator == "!" {
+			return "bool"
+		}
+		return tc.inferType(e.Right)
 	case *parser.CallExpression:
 		return "any"
 	default:

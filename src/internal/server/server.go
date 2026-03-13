@@ -58,7 +58,7 @@ $ctx->query = (object)$_GET;
 $ctx->body = (object)$_POST;
 $db = null;
 `, path)
-	phpCode = strings.Replace(phpCode, "<?php", "<?php\n"+ctxInit, 1)
+	phpCode = strings.Replace(phpCode, "$file = new ZenithFile();", "$file = new ZenithFile();\n"+ctxInit, 1)
 
 	output, err := e.Execute(phpCode)
 	if err != nil {
@@ -75,7 +75,7 @@ func Start(port string) {
 	if !strings.HasPrefix(port, ":") {
 		port = ":" + port
 	}
-	fmt.Printf("Zenith Dev Server starting on http://localhost%s\n", port)
+	fmt.Printf("Zenith Server starting on http://localhost%s\n", port)
 	http.HandleFunc("/", handleZenith)
 	log.Fatal(http.ListenAndServe(port, nil))
 }

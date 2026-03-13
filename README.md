@@ -8,10 +8,10 @@
 ---
 
 ## Zenith V2.6
-Zenith is a high-performance programming language that transpiles to ultra-modern PHP 8.1+. It combines the ubiquity of PHP with the safety and ergonomics of modern functional languages.
+Zenith is a high-performance programming language that transpiles to PHP 8.1+. It combines the ubiquity of PHP with the safety and ergonomics of modern functional languages.
 
 ## Core Pillars
-- **Ultra-Modern Transpilation**: Targets PHP 8.1+ features like `match`, `fn`, and `?->`.
+- **Modern Transpilation**: Targets PHP 8.1+ features like `match`, `fn`, and `?->`.
 - **Quantum Shield**: Strict static type system that eliminates runtime type errors.
 - **Functional Ergonomics**: Native pipe operator `|>` and high-order functions.
 - **Secure by Design**: Sandboxed environment with explicit permissions (FS, Net, Env).
