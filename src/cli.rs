@@ -1,14 +1,11 @@
 use clap::{Parser, Subcommand};
-use crate::core::lexer::Lexer;
-use crate::core::parser::Parser as ZenithParser;
-use crate::core::analyzer::Analyzer;
-use crate::codegen::transpiler::Transpiler;
-use crate::codegen::native::NativeCompiler;
-use inkwell::context::Context;
+use crate::core::engine::{Engine, Options as EngineOptions};
+use crate::core::server;
+use actix_rt;
 
 #[derive(Parser)]
 #[command(name = "zenith")]
-#[command(about = "The Modern PHP & Native Runtime", long_about = None)]
+#[command(about = "The Modern PHP & Rust Runtime", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -25,9 +22,6 @@ enum Commands {
         #[arg(default_value = "8080")]
         port: String,
     },
-    Bundle {
-        file: String,
-    },
 }
 
 pub fn run_cli() {
@@ -35,37 +29,31 @@ pub fn run_cli() {
 
     match &cli.command {
         Commands::Run { file, php } => {
-            let input = std::fs::read_to_string(file).expect("Failed to read file");
-            let lexer = Lexer::new(&input);
-            let mut parser = ZenithParser::new(lexer);
-            let program = parser.parse_program();
+            let engine = Engine::new(EngineOptions {
+                allow_read: true,
+                allow_net: true,
+                allow_env: true,
+            });
 
-            let mut analyzer = Analyzer::new();
-            let lc_map = analyzer.analyze(&program);
-
-            if !lc_map.errors.is_empty() {
-                for err in lc_map.errors {
-                    println!("[!] {}", err);
+            match engine.transpile(file) {
+                Ok(php_code) => {
+                    if *php {
+                        println!("{}", php_code);
+                    } else {
+                        match engine.execute(&php_code) {
+                            Ok(output) => print!("{}", output),
+                            Err(e) => println!("[!] Execution Error: {}", e),
+                        }
+                    }
                 }
-                return;
-            }
-
-            if *php {
-                let transpiler = Transpiler::new();
-                let php_code = transpiler.get_php_header() + &transpiler.transpile(&program);
-                println!("{}", php_code);
-            } else {
-                let context = Context::create();
-                let mut native = NativeCompiler::new(&context, "main");
-                native.compile(&program);
-                native.run_jit();
+                Err(e) => println!("[!] Transpilation Error: {}", e),
             }
         }
         Commands::Serve { port } => {
-            println!("Starting server on port {}...", port);
-        }
-        Commands::Bundle { file } => {
-            println!("Bundling {}...", file);
+            let rt = actix_rt::System::new();
+            if let Err(e) = rt.block_on(server::start(port)) {
+                println!("[!] Server Error: {}", e);
+            }
         }
     }
 }

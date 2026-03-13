@@ -13,3 +13,14 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 logos = "0.13"
 nom = "7.1"
+sha2 = "0.10"
+reqwest = { version = "0.11", features = ["blocking"] }
+dirs = "5.0"
+zip = "0.6" # for extracting if needed, though Go used tar.gz
+flate2 = "1.0"
+tar = "0.4"
+which = "4.4"
+tempfile = "3.8"
+actix-web = "4.4"
+actix-files = "0.6"
+actix-rt = "2.9"

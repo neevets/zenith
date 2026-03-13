@@ -1,4 +1,4 @@
-use crate::core::ast::{Program, Statement, Expression, BlockStatement};
+use crate::core::ast::{Program, Statement, Expression, BlockStatement, MatchArm};
 use crate::core::analyzer::LifeCycleMap;
 
 pub struct Transpiler {
@@ -36,12 +36,13 @@ impl Transpiler {
         for stmt in &program.statements {
             out.push_str(&self.transpile_statement(stmt));
             out.push('\n');
+            // TODO: LifeCycle management (unset variables)
         }
 
         out
     }
 
-    fn transpile_statement(&self, stmt: &Statement) -> String {
+    pub fn transpile_statement(&self, stmt: &Statement) -> String {
         match stmt {
             Statement::Let { name, value, .. } => {
                 format!("${} = {};", name, self.transpile_expression(value))
@@ -59,6 +60,57 @@ impl Transpiler {
                 }
                 out
             }
+            Statement::While { condition, body } => {
+                format!("while ({}) {{\n{}}}", self.transpile_expression(condition), self.transpile_block(body))
+            }
+            Statement::For { variable, iterable, body } => {
+                format!("foreach ({} as ${}) {{\n{}}}", self.transpile_expression(iterable), variable, self.transpile_block(body))
+            }
+            Statement::FunctionDefinition { name, parameters, body, return_type, .. } => {
+                let params: Vec<String> = parameters.iter().map(|p| {
+                    let mut s = String::new();
+                    if let Some(ref t) = p.param_type {
+                        s.push_str(t);
+                        s.push(' ');
+                    }
+                    if p.is_var {
+                        s.push('$');
+                    }
+                    s.push_str(&p.name);
+                    s
+                }).collect();
+                let ret = return_type.as_ref().map(|t| format!(": {}", t)).unwrap_or_default();
+                format!("function {}({}){} {{\n    global $file, $db, $ctx, $db_path;\n{}}}", name, params.join(", "), ret, self.transpile_block(body))
+            }
+            Statement::Enum { name, cases } => {
+                let mut out = format!("enum {} {{\n", name);
+                for case in cases {
+                    out.push_str(&format!("    case {}", case.name));
+                    if let Some(ref val) = case.value {
+                        out.push_str(&format!(" = {}", self.transpile_expression(val)));
+                    }
+                    out.push_str(";\n");
+                }
+                out.push_str("}\n");
+                out
+            }
+            Statement::Struct { name, fields } => {
+                let mut out = format!("class {} {{\n", name);
+                for field in fields {
+                    let mut mod_str = String::from("public");
+                    if field.is_readonly {
+                        mod_str.push_str(" readonly");
+                    }
+                    let typ = field.field_type.as_ref().map(|t| format!("{} ", t)).unwrap_or_default();
+                    out.push_str(&format!("    {} {}${};\n", mod_str, typ, field.name));
+                }
+                out.push_str("}\n");
+                out
+            }
+            Statement::Yield(val) => {
+                let v = val.as_ref().map(|e| self.transpile_expression(e)).unwrap_or_default();
+                format!("Fiber::suspend({});", v)
+            }
             _ => String::new(),
         }
     }
@@ -73,17 +125,24 @@ impl Transpiler {
         out
     }
 
-    fn transpile_expression(&self, expr: &Expression) -> String {
+    pub fn transpile_expression(&self, expr: &Expression) -> String {
         match expr {
             Expression::Identifier(val) => val.clone(),
             Expression::Variable(val) => format!("${}", val),
             Expression::IntegerLiteral(val) => val.to_string(),
-            Expression::StringLiteral { value, delimiter, .. } => {
-                format!("{}{}{}", delimiter, value, delimiter)
+            Expression::StringLiteral { value, delimiter, is_render } => {
+                let mut val = value.clone();
+                if *is_render && *delimiter == '"' {
+                    val = self.apply_xss_protection(&val);
+                }
+                format!("{}{}{}", delimiter, val, delimiter)
             }
             Expression::InfixExpression { left, operator, right } => {
                 let op = if operator == "+" { "." } else { operator };
                 format!("({} {} {})", self.transpile_expression(left), op, self.transpile_expression(right))
+            }
+            Expression::PrefixExpression { operator, right } => {
+                format!("({}{})", operator, self.transpile_expression(right))
             }
             Expression::CallExpression { function, arguments } => {
                 let func_name = self.transpile_expression(function);
@@ -94,8 +153,122 @@ impl Transpiler {
                     format!("{}({})", func_name, args.join(", "))
                 }
             }
+            Expression::MethodCallExpression { object, method, arguments, is_nullsafe } => {
+                let obj = self.transpile_expression(object);
+                let args: Vec<String> = arguments.iter().map(|a| self.transpile_expression(a)).collect();
+                let op = if *is_nullsafe { "?->" } else { "->" };
+                match method.as_str() {
+                    "length" => format!("strlen({})", obj),
+                    "push" => format!("array_push({}, {})", obj, args.join(", ")),
+                    "parse" if obj == "json" => format!("json_decode({}, true)", args.join(", ")),
+                    "stringify" if obj == "json" => format!("json_encode({})", args.join(", ")),
+                    _ => {
+                        let mut use_obj = obj;
+                        if use_obj == "file" { use_obj = "$file".into(); }
+                        if use_obj == "$ctx" {
+                            match method.as_str() {
+                                "query" => if let Some(a) = args.get(0) { return format!("$_GET[{}]", a); } else { return "$_GET".into(); },
+                                "body" => if let Some(a) = args.get(0) { return format!("$_POST[{}]", a); } else { return "$_POST".into(); },
+                                _ => {}
+                            }
+                        }
+                        format!("{}{}{}({})", use_obj, op, method, args.join(", "))
+                    }
+                }
+            }
+            Expression::MemberExpression { object, property, is_nullsafe } => {
+                let obj = self.transpile_expression(object);
+                let op = if *is_nullsafe { "?->" } else { "->" };
+                if obj == "$ctx" {
+                    match property.as_str() {
+                        "query" => return "$_GET".into(),
+                        "body" => return "$_POST".into(),
+                        _ => {}
+                    }
+                }
+                format!("{}{}{}", obj, op, property)
+            }
+            Expression::ArrayLiteral(elements) => {
+                let elms: Vec<String> = elements.iter().map(|e| self.transpile_expression(e)).collect();
+                format!("[{}]", elms.join(", "))
+            }
+            Expression::MapLiteral(pairs) => {
+                let p: Vec<String> = pairs.iter().map(|(k, v)| format!("{} => {}", self.transpile_expression(k), self.transpile_expression(v))).collect();
+                format!("[{}]", p.join(", "))
+            }
+            Expression::IndexExpression { left, index } => {
+                format!("{}[{}]", self.transpile_expression(left), self.transpile_expression(index))
+            }
+            Expression::NullCoalesceExpression { left, right } => {
+                format!("({} ?? {})", self.transpile_expression(left), self.transpile_expression(right))
+            }
+            Expression::AssignExpression { left, value } => {
+                format!("{} = {}", self.transpile_expression(left), self.transpile_expression(value))
+            }
+            Expression::MatchExpression { condition, arms } => {
+                let mut out = format!("match ({}) {{\n", self.transpile_expression(condition));
+                for arm in arms {
+                    out.push_str("        ");
+                    if arm.is_default {
+                        out.push_str("default");
+                    } else {
+                        let vals: Vec<String> = arm.values.iter().map(|v| self.transpile_expression(v)).collect();
+                        out.push_str(&vals.join(", "));
+                    }
+                    out.push_str(&format!(" => {},\n", self.transpile_expression(&arm.result)));
+                }
+                out.push_str("    }");
+                out
+            }
+            Expression::SqlQueryExpression { query, args, .. } => {
+                let mut trans_args: Vec<String> = args.iter().map(|a| self.transpile_expression(a)).collect();
+                let mut use_vars = vec!["$db"];
+                // This is simplified but mirrors the Go logic
+                let use_clause = if !trans_args.is_empty() {
+                    let mut v = trans_args.clone();
+                    v.push("$db".into());
+                    v.join(", ")
+                } else {
+                    "$db".into()
+                };
+                format!("(function() use ({}) {{ try {{ $stmt = $db->prepare(\"{}\"); $stmt->execute([{}]); return $stmt->fetchAll(); }} catch (Exception $e) {{ return null; }} }})()",
+                    use_clause, query, trans_args.join(", "))
+            }
+            Expression::PipeExpression { left, right } => {
+                 let lhs = self.transpile_expression(left);
+                 // Similar to Go, we need to handle if right is a call or just an identifier
+                 match right.as_ref() {
+                     Expression::CallExpression { function, arguments } => {
+                         let mut args = vec![lhs];
+                         args.extend(arguments.iter().map(|a| self.transpile_expression(a)));
+                         format!("{}({})", self.transpile_expression(function), args.join(", "))
+                     }
+                     _ => format!("{}({})", self.transpile_expression(right), lhs),
+                 }
+            }
+            Expression::ArrowFunctionExpression { parameters, body, return_type } => {
+                let params: Vec<String> = parameters.iter().map(|p| {
+                    let mut s = String::new();
+                    if let Some(ref t) = p.param_type { s.push_str(t); s.push(' '); }
+                    if p.is_var { s.push('$'); }
+                    s.push_str(&p.name);
+                    s
+                }).collect();
+                let ret = return_type.as_ref().map(|t| format!(": {}", t)).unwrap_or_default();
+                format!("fn({}){} => {}", params.join(", "), ret, self.transpile_expression(body))
+            }
+            Expression::SpawnExpression { body } => {
+                let b = self.transpile_statement(body);
+                format!("(function() {{ $f = new Fiber(function() {{ {} }}); $f->start(); return $f; }})()", b)
+            }
             _ => String::new(),
         }
+    }
+
+    fn apply_xss_protection(&self, input: &str) -> String {
+        // Simple implementation of the bracket-based XSS protection from Go
+        // This is a placeholder for the logic that finds {expr} and wraps it in htmlspecialchars
+        input.to_string()
     }
 
     pub fn get_php_header(&self) -> String {
