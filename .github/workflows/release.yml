@@ -2,8 +2,14 @@ name: Zenith Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -13,45 +19,90 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: '1.21'
+          components: rustfmt
 
-      - name: Build & Run Tests
-        run: |
-          go build -o zenith ./src/cmd/zenith/main.go
-          chmod +x ./zenith
-          for file in test/*.zen; do
-            echo "Testing $file..."
-            ./zenith run "$file" || exit 1
-          done
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
 
-  release:
-    name: Multi-Platform Build
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Build check
+        run: cargo check --all-targets
+
+      - name: Run tests
+        run: cargo test --all-targets
+
+  build:
+    name: Build ${{ matrix.os }}
     needs: test
-    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: zenith-linux-amd64
+            bin: zenith
+          - os: macos-latest
+            artifact: zenith-macos-arm64
+            bin: zenith
+          - os: windows-latest
+            artifact: zenith-windows-amd64.exe
+            bin: zenith.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cross-Compile
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package binary (unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/zenith-linux-amd64 ./src/cmd/zenith/main.go
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/zenith-macos-arm64 ./src/cmd/zenith/main.go
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/zenith-windows.exe ./src/cmd/zenith/main.go
+          cp target/release/${{ matrix.bin }} dist/${{ matrix.artifact }}
 
-      - name: GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: Package binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: dist/*
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
           tag_name: ${{ github.ref_name }}
-          name: Zenith ${{ github.ref_name }} - Stable
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Zenith ${{ github.ref_name }}
+          files: dist/*
