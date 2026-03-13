@@ -1,7 +1,7 @@
-use actix_web::{web, App, HttpServer, HttpResponse, Responder, HttpRequest};
-use actix_files::NamedFile;
-use std::path::PathBuf;
 use crate::core::engine::{Engine, Options};
+use actix_files::NamedFile;
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use std::path::PathBuf;
 
 async fn handle_zenith(req: HttpRequest) -> impl Responder {
     let mut path = req.path().to_string();
@@ -21,7 +21,7 @@ async fn handle_zenith(req: HttpRequest) -> impl Responder {
     }
 
     // Transpile libraries if needed (simplified for now)
-    
+
     let full_path = format!(".{}", path);
     let engine = Engine::new(Options {
         allow_read: true,
@@ -36,15 +36,18 @@ async fn handle_zenith(req: HttpRequest) -> impl Responder {
                 "\n$ctx = new Context();\n$ctx->path = \"{}\";\n$ctx->query = (object)$_GET;\n$ctx->body = (object)$_POST;\n$db = null;\n",
                 path
             );
-            let final_php = php_code.replace("$file = new ZenithFile();", &format!("$file = new ZenithFile();{}", ctx_init));
-            
+            let final_php = php_code.replace(
+                "$file = new ZenithFile();",
+                &format!("$file = new ZenithFile();{}", ctx_init),
+            );
+
             match engine.execute(&final_php) {
-                Ok(output) => HttpResponse::Ok()
-                    .content_type("text/html")
-                    .body(output),
-                Err(e) => HttpResponse::InternalServerError().body(format!("Execution Error: {}", e)),
+                Ok(output) => HttpResponse::Ok().content_type("text/html").body(output),
+                Err(e) => {
+                    HttpResponse::InternalServerError().body(format!("Execution Error: {}", e))
+                }
             }
-        },
+        }
         Err(e) => HttpResponse::InternalServerError().body(format!("Transpilation Error: {}", e)),
     }
 }
@@ -58,11 +61,8 @@ pub async fn start(port: &str) -> std::io::Result<()> {
 
     println!("Zenith Server starting on http://{}", addr);
 
-    HttpServer::new(|| {
-        App::new()
-            .default_service(web::to(handle_zenith))
-    })
-    .bind(addr)?
-    .run()
-    .await
+    HttpServer::new(|| App::new().default_service(web::to(handle_zenith)))
+        .bind(addr)?
+        .run()
+        .await
 }

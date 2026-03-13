@@ -1,6 +1,6 @@
-use crate::core::ast::{Program, Statement, Expression, BlockStatement};
-use std::collections::HashMap;
+use crate::core::ast::{BlockStatement, Expression, Program, Statement};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 
 #[derive(Debug, Default)]
@@ -28,10 +28,10 @@ impl Analyzer {
 
     pub fn analyze(&mut self, program: &Program) -> LifeCycleMap {
         self.traverse_program(program);
-        
+
         let mut type_errors = self.type_checker.check(program);
         self.lc_map.errors.append(&mut type_errors);
-        
+
         std::mem::take(&mut self.lc_map)
     }
 
@@ -58,7 +58,11 @@ impl Analyzer {
             }
             Statement::Expression(expr) => self.analyze_expression(expr, index),
             Statement::Return(expr) => self.analyze_expression(expr, index),
-            Statement::If { condition, consequence, alternative } => {
+            Statement::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
                 self.analyze_expression(condition, index);
                 self.analyze_block(consequence, index);
                 if let Some(alt) = alternative {
@@ -92,7 +96,10 @@ impl Analyzer {
             Expression::Variable(name) => {
                 self.last_uses.insert(name.clone(), index);
             }
-            Expression::CallExpression { function, arguments } => {
+            Expression::CallExpression {
+                function,
+                arguments,
+            } => {
                 self.analyze_expression(function, index);
                 for arg in arguments {
                     self.analyze_expression(arg, index);
@@ -113,7 +120,12 @@ impl Analyzer {
                     self.lc_map.errors.push("Quantum Shield Alert: Potential SQL Injection detected. Use parameter binding instead of variable interpolation.".into());
                 }
             }
-            Expression::MethodCallExpression { object, method, arguments, .. } => {
+            Expression::MethodCallExpression {
+                object,
+                method,
+                arguments,
+                ..
+            } => {
                 if let Expression::Identifier(name) = object.as_ref() {
                     if name == "file" && (method == "read" || method == "write") {
                         if let Some(Expression::StringLiteral { value, .. }) = arguments.get(0) {
@@ -175,21 +187,34 @@ impl TypeChecker {
 
     fn check_statement(&mut self, stmt: &Statement, errors: &mut Vec<String>) {
         match stmt {
-            Statement::Let { name, value, var_type } => {
+            Statement::Let {
+                name,
+                value,
+                var_type,
+            } => {
                 let inferred = self.infer_type(value);
                 if let Some(target_str) = var_type {
                     let target = ZenithType::from(target_str.as_str());
                     if target != ZenithType::Any && !self.is_compatible(&target, &inferred) {
-                        errors.push(format!("Type mismatch: cannot assign {:?} to variable {} of type {:?}", inferred, name, target));
+                        errors.push(format!(
+                            "Type mismatch: cannot assign {:?} to variable {} of type {:?}",
+                            inferred, name, target
+                        ));
                     }
                     self.symbols.insert(name.clone(), target);
                 } else {
                     self.symbols.insert(name.clone(), inferred);
                 }
             }
-            Statement::FunctionDefinition { parameters, body, .. } => {
+            Statement::FunctionDefinition {
+                parameters, body, ..
+            } => {
                 for param in parameters {
-                    let p_type = param.param_type.as_deref().map(ZenithType::from).unwrap_or(ZenithType::Any);
+                    let p_type = param
+                        .param_type
+                        .as_deref()
+                        .map(ZenithType::from)
+                        .unwrap_or(ZenithType::Any);
                     self.symbols.insert(param.name.clone(), p_type);
                 }
                 for s in &body.statements {
@@ -204,16 +229,22 @@ impl TypeChecker {
         match expr {
             Expression::IntegerLiteral(_) => ZenithType::Int,
             Expression::StringLiteral { .. } => ZenithType::String,
-            Expression::Variable(name) => self.symbols.get(name).cloned().unwrap_or(ZenithType::Any),
-            Expression::InfixExpression { left, operator, right } => {
+            Expression::Variable(name) => {
+                self.symbols.get(name).cloned().unwrap_or(ZenithType::Any)
+            }
+            Expression::InfixExpression {
+                left,
+                operator,
+                right,
+            } => {
                 let l_type = self.infer_type(left);
                 let r_type = self.infer_type(right);
                 match operator.as_str() {
                     "+" | "-" | "*" | "/" => {
                         if l_type == ZenithType::Int && r_type == ZenithType::Int {
-                             ZenithType::Int
+                            ZenithType::Int
                         } else {
-                             ZenithType::Any
+                            ZenithType::Any
                         }
                     }
                     "==" | "!=" | "<" | ">" => ZenithType::Bool,
@@ -248,7 +279,7 @@ impl SchemaManager {
         let schema = fs::read_to_string(path)
             .ok()
             .and_then(|data| serde_json::from_str(&data).ok());
-        
+
         SchemaManager { schema }
     }
 
@@ -258,7 +289,10 @@ impl SchemaManager {
             if let Some(tbl) = schema.tables.get(table) {
                 for col in columns {
                     if col != "*" && !tbl.columns.contains_key(col) {
-                        errors.push(format!("Column '{}' does not exist in table '{}'", col, table));
+                        errors.push(format!(
+                            "Column '{}' does not exist in table '{}'",
+                            col, table
+                        ));
                     }
                 }
             } else {
