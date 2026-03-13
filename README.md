@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/logo.png" width="200" alt="Zenith">
   <p><a href="https://zenithlang.vercel.app">zenithlang.vercel.app</a></p>
-  <h1>Zenith: The Modern PHP Runtime</h1>
+  <h1>Zenith</h1>
   </div>
 
 ## Features
