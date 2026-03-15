@@ -1,12 +1,13 @@
-// Zenith Error Showcase
-let $usuario = "Crivas";
-let $puntos = 100 // <--- ERROR 1: Falta el punto y coma
+// Zenith - Web List Rendering
+println("<ul>");
 
-render function MostrarPerfil(nombre: string) {
-    // ERROR 2: Intentar usar una variable que no existe (typo)
-    println("Hola, " + $nombe); 
+// 1. Quantum Shield SQL: Seguro, limpio y directo.
+// 2. Iteración limpia: Sin etiquetas de apertura/cierre constantes.
+let $rows = db.query(SELECT * FROM table);
+
+for ($row in $rows) {
+    // 3. String Interpolation: Evitamos la concatenación fea de PHP con puntos.
+    println("<li>{ $row.field1 } - { $row.field1 }</li>");
 }
 
-// ERROR 3: Llamar a una función con el tipo de dato incorrecto
-// Nuestro parser espera un 'string', pero le pasamos un entero
-MostrarPerfil($puntos);
+println("</ul>");

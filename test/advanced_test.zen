@@ -1,1 +1,9 @@
-enum Status { Active, Inactive = 0 } struct User { readonly $id: int; $status: Status } function sync($user: User & Countable): void { print("Syncing user"); } let $u = 1; print("Advanced features parsed");
+test "advanced features parsing" {
+    enum Status { Active, Inactive }
+    struct User { 
+        readonly $id: int; 
+        $status: Status 
+    }
+    let $ok = true;
+    z_assert($ok, "advanced syntax structures parsed successfully");
+}

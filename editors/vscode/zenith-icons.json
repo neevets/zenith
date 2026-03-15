@@ -1,0 +1,11 @@
+{
+    "iconDefinitions": {
+        "zenith_icon": {
+            "iconPath": "./assets/zen-icon.png"
+        }
+    },
+    "fileExtensions": {
+        "zen": "zenith_icon",
+        "zenith": "zenith_icon"
+    }
+}

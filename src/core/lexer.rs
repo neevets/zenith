@@ -41,6 +41,10 @@ pub enum TokenType {
     Enum,
     #[token("readonly")]
     Readonly,
+    #[token("test")]
+    Test,
+    #[token("struct")]
+    Struct,
 
     #[token("int")]
     IntType,
@@ -54,6 +58,10 @@ pub enum TokenType {
     AnyType,
     #[token("default")]
     Default,
+    #[token("<=")]
+    Leq,
+    #[token(">=")]
+    Geq,
     #[token("error")]
     Error,
     #[token("SELECT")]
@@ -62,6 +70,18 @@ pub enum TokenType {
     From,
     #[token("WHERE")]
     Where,
+    #[token("INSERT")]
+    Insert,
+    #[token("UPDATE")]
+    Update,
+    #[token("DELETE")]
+    Delete,
+    #[token("INTO")]
+    Into,
+    #[token("VALUES")]
+    Values,
+    #[token("SET")]
+    Set,
 
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident,
@@ -71,6 +91,9 @@ pub enum TokenType {
 
     #[regex(r"[0-9]+")]
     Int,
+
+    #[regex(r"[0-9]+\.[0-9]+")]
+    Float,
 
     #[token("(")]
     LParen,
@@ -126,6 +149,10 @@ pub enum TokenType {
     And,
     #[token("||")]
     Or,
+    #[token("@")]
+    At,
+    #[token("%")]
+    Modulo,
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
     #[regex(r#"'([^'\\]|\\.)*'"#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]

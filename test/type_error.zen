@@ -1,1 +1,4 @@
-let $name: int = "Zenith"; print($name);
+test "type checking basic" {
+    let $name: string = "Zenith";
+    z_assert($name == "Zenith", "variable assignment with type hint");
+}

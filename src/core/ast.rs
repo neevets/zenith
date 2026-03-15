@@ -1,8 +1,17 @@
+use logos::Span;
+
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub struct Expression {
+    pub kind: ExpressionKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExpressionKind {
     Identifier(String),
     Variable(String),
     IntegerLiteral(i64),
+    FloatLiteral(f64),
     StringLiteral {
         value: String,
         is_render: bool,
@@ -68,18 +77,45 @@ pub enum Expression {
         table: Option<String>,
         columns: Vec<String>,
     },
+    StructLiteral {
+        name: String,
+        fields: Vec<(String, Expression)>,
+    },
     Block(BlockStatement),
 }
 
 #[derive(Debug, Clone)]
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum PatternKind {
+    Literal(Expression),
+    Identifier(String),
+    Struct {
+        name: String,
+        fields: Vec<(String, Pattern)>,
+    },
+    Wildcard,
+}
+
+#[derive(Debug, Clone)]
 pub struct MatchArm {
-    pub values: Vec<Expression>,
+    pub patterns: Vec<Pattern>,
     pub result: Expression,
     pub is_default: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
+pub struct Statement {
+    pub kind: StatementKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum StatementKind {
     Import(String),
     Let {
         name: String,
@@ -108,6 +144,7 @@ pub enum Statement {
         body: BlockStatement,
         return_type: Option<String>,
         is_render: bool,
+        is_memoized: bool,
     },
     Enum {
         name: String,
@@ -118,11 +155,17 @@ pub enum Statement {
         fields: Vec<StructField>,
     },
     Yield(Option<Expression>),
+    Test {
+        name: String,
+        body: BlockStatement,
+    },
+    Middleware(BlockStatement),
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockStatement {
     pub statements: Vec<Statement>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -150,4 +193,5 @@ pub struct Program {
     pub imports: Vec<Statement>,
     pub middleware: Option<BlockStatement>,
     pub statements: Vec<Statement>,
+    pub span: Span,
 }

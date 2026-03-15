@@ -1,4 +1,3 @@
-// Test for Pipe Operator
 let $data: string = "  zenith language  ";
 let $result: string = $data |> trim() |> strtoupper();
 

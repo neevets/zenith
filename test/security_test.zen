@@ -1,6 +1,19 @@
-// This should be blocked by Quantum Shield Pro
-let $table = "users";
-let $query = db.query(SELECT * FROM $table);
+test "security: sql injection protection" {
+    // This should be BLOCKED by Quantum Shield
+    // because it uses variable interpolation in the query
+    let $table = "users";
+    db.query(SELECT * FROM $table);
+}
 
-// This should also be blocked
-file.read("../../../etc/passwd");
+test "security: path traversal protection" {
+    // This should be BLOCKED by Quantum Shield
+    // because it contains ".." in the path
+    file.read("../../../etc/passwd");
+}
+
+test "security: safe file access" {
+    // This should PASS because it is a safe path
+    file.write("safe.txt", "content");
+    let $data = file.read("safe.txt");
+    z_assert($data == "content", "safe file access works");
+}

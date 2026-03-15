@@ -1,11 +1,18 @@
 use crate::core::analyzer::LifeCycleMap;
-use crate::core::ast::{BlockStatement, Expression, Program, Statement};
+use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind, Parameter};
 use std::collections::HashMap;
 
 pub struct Transpiler {
     pub lc_map: Option<LifeCycleMap>,
     pub module_map: HashMap<String, String>,
     pub top_level_vars: Vec<String>,
+    pub is_test_mode: bool,
+    pub test_blocks: Vec<(String, String)>,
+    pub inline_candidates: HashMap<String, (Vec<Parameter>, Expression)>,
+    pub is_in_memoized_function: bool,
+    pub current_memo_cache: Option<String>,
+    pub current_memo_key: Option<String>,
+    pub current_used_vars: std::collections::HashSet<String>,
 }
 
 impl Transpiler {
@@ -14,6 +21,13 @@ impl Transpiler {
             lc_map: None,
             module_map: HashMap::new(),
             top_level_vars: Vec::new(),
+            is_test_mode: false,
+            test_blocks: Vec::new(),
+            inline_candidates: HashMap::new(),
+            is_in_memoized_function: false,
+            current_memo_cache: None,
+            current_memo_key: None,
+            current_used_vars: std::collections::HashSet::new(),
         }
     }
 
@@ -27,42 +41,32 @@ impl Transpiler {
 
     pub fn transpile(&mut self, program: &Program) -> String {
         let mut out = String::new();
-
-        // Pass 1: Collect top-level variables
         for stmt in &program.statements {
-            if let Statement::Let { name, .. } = stmt {
-                let clean_name = if name.starts_with('$') {
-                    name.clone()
-                } else {
-                    format!("${}", name)
-                };
+            if let StatementKind::Let { name, .. } = &stmt.kind {
+                let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
                 self.top_level_vars.push(clean_name);
             }
-        }
-
-        for stmt in &program.imports {
-            if let Statement::Import(path) = stmt {
-                let php_path = self.module_map.get(path).cloned().unwrap_or_else(|| {
-                    if path.starts_with("http") {
-                        // Fallback for unmapped URLs (should not happen if engine works correctly)
-                        path.replace(".zen", ".php")
-                    } else if path.starts_with("composer:") {
-                        "".into() // Handled by autoloader
-                    } else {
-                        path.replace(".zen", ".php")
+            if let StatementKind::FunctionDefinition { name, parameters, body, .. } = &stmt.kind {
+                if body.statements.len() == 1 {
+                    if let StatementKind::Return(expr) = &body.statements[0].kind {
+                        self.inline_candidates.insert(name.clone(), (parameters.clone(), expr.clone()));
                     }
-                });
-
-                if !php_path.is_empty() {
-                    out.push_str(&format!("require_once \"{}\";\n", php_path));
                 }
             }
         }
 
-        if !program.imports.is_empty() {
-            out.push('\n');
+        for stmt in &program.imports {
+            if let StatementKind::Import(path) = &stmt.kind {
+                let php_path = self.module_map.get(path).cloned().unwrap_or_else(|| {
+                    if path.starts_with("http") { path.replace(".zen", ".php") }
+                    else if path.starts_with("composer:") { "".into() }
+                    else { path.replace(".zen", ".php") }
+                });
+                if !php_path.is_empty() { out.push_str(&format!("require_once \"{}\";\n", php_path)); }
+            }
         }
 
+        if !program.imports.is_empty() { out.push('\n'); }
         if let Some(middleware) = &program.middleware {
             out.push_str(&self.transpile_block(middleware));
             out.push('\n');
@@ -72,578 +76,336 @@ impl Transpiler {
             out.push_str(&self.transpile_statement(stmt));
             out.push('\n');
         }
-
         out
     }
 
-    pub fn transpile_statement(&self, stmt: &Statement) -> String {
-        match stmt {
-            Statement::Let { name, value, .. } => {
-                let clean_name = name.trim_start_matches('$');
-                format!("${} = {};", clean_name, self.transpile_expression(value))
+    pub fn transpile_statement(&mut self, stmt: &Statement) -> String {
+        match &stmt.kind {
+            StatementKind::Import(_) => "".into(),
+            StatementKind::Middleware(_) => "".into(),
+            StatementKind::Let { name, value, .. } => {
+                let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
+                format!("{} = {};", clean_name, self.transpile_expression(value))
             }
-            Statement::Return(expr) => {
-                format!("return {};", self.transpile_expression(expr))
+            StatementKind::Return(expr) => format!("return {};", self.transpile_expression(expr)),
+            StatementKind::Expression(expr) => {
+                let s = self.transpile_expression(expr);
+                if s.is_empty() { "".into() } else { format!("{};", s) }
             }
-            Statement::Expression(expr) => {
-                format!("{};", self.transpile_expression(expr))
-            }
-            Statement::If {
-                condition,
-                consequence,
-                alternative,
-            } => {
-                let mut out = format!(
-                    "if ({}) {{\n{}}}",
-                    self.transpile_expression(condition),
-                    self.transpile_block(consequence)
-                );
+            StatementKind::If { condition, consequence, alternative } => {
+                let mut out = format!("if ({}) {{\n", self.transpile_expression(condition));
+                out.push_str(&self.transpile_block(consequence));
+                out.push_str("}");
                 if let Some(alt) = alternative {
-                    out.push_str(&format!(" else {{\n{}}}", self.transpile_block(alt)));
+                    out.push_str(" else {\n");
+                    out.push_str(&self.transpile_block(alt));
+                    out.push_str("}");
                 }
                 out
             }
-            Statement::While { condition, body } => {
-                format!(
-                    "while ({}) {{\n{}}}",
-                    self.transpile_expression(condition),
-                    self.transpile_block(body)
-                )
+            StatementKind::While { condition, body } => {
+                format!("while ({}) {{\n{}}}", self.transpile_expression(condition), self.transpile_block(body))
             }
-            Statement::For {
-                variable,
-                iterable,
-                body,
-            } => {
-                let it = self.transpile_expression(iterable);
-                let var = if variable.starts_with('$') {
-                    variable.clone()
-                } else {
-                    format!("${}", variable)
-                };
-                format!(
-                    "foreach ({} as {}) {{\n{}}}",
-                    it,
-                    var,
-                    self.transpile_block(body)
-                )
+            StatementKind::For { variable, iterable, body } => {
+                let clean_var = if variable.starts_with('$') { variable.clone() } else { format!("${}", variable) };
+                format!("foreach ({}) as {}) {{\n{}}}", self.transpile_expression(iterable), clean_var, self.transpile_block(body))
             }
-            Statement::FunctionDefinition {
-                name,
-                parameters,
-                body,
-                return_type,
-                ..
-            } => {
-                let mut p_list = Vec::new();
-                for p in parameters {
-                    let mut s = String::new();
-                    if let Some(ref t) = p.param_type {
-                        if t != "any" {
-                            s.push_str(t);
-                            s.push(' ');
-                        }
-                    }
-                    let name = if p.name.starts_with('$') {
-                        p.name.clone()
-                    } else {
-                        format!("${}", p.name)
-                    };
-                    s.push_str(&name);
-                    p_list.push(s);
-                }
-                let ret = if let Some(ref t) = return_type {
-                    if t == "any" {
-                        "".into()
-                    } else {
-                        format!(": {}", t)
-                    }
-                } else {
-                    "".into()
-                };
-
-                let mut globals = vec![
-                    "$file".to_string(),
-                    "$db".to_string(),
-                    "$ctx".to_string(),
-                    "$db_file".to_string(),
-                ];
-                globals.extend(self.top_level_vars.clone());
-                globals.sort();
-                globals.dedup();
-
-                format!(
-                    "function {}({}){} {{\n    global {};\n{}}}",
-                    name,
-                    p_list.join(", "),
-                    ret,
-                    globals.join(", "),
-                    self.transpile_block(body)
-                )
+            StatementKind::FunctionDefinition { name, parameters, body, is_render, is_memoized, .. } => {
+                self.transpile_function(name, parameters, body, *is_render, *is_memoized)
             }
-            Statement::Enum { name, cases } => {
+            StatementKind::Enum { name, cases } => {
                 let mut out = format!("enum {} {{\n", name);
                 for case in cases {
-                    out.push_str(&format!("    case {}", case.name));
-                    if let Some(ref val) = case.value {
-                        out.push_str(&format!(" = {}", self.transpile_expression(val)));
-                    }
-                    out.push_str(";\n");
+                    out.push_str(&format!("    case {};\n", case.name));
                 }
-                out.push_str("}\n");
+                out.push_str("}");
                 out
             }
-            Statement::Struct { name, fields } => {
+            StatementKind::Struct { name, fields } => {
                 let mut out = format!("class {} {{\n", name);
-                for field in fields {
-                    let mut mod_str = String::from("public");
-                    if field.is_readonly {
-                        mod_str.push_str(" readonly");
-                    }
-                    let typ = field
-                        .field_type
-                        .as_ref()
-                        .map(|t| format!("{} ", t))
-                        .unwrap_or_default();
-                    out.push_str(&format!("    {} {}${};\n", mod_str, typ, field.name));
+                out.push_str("    public function __construct(\n");
+                for (i, field) in fields.iter().enumerate() {
+                    let php_type = self.map_type(field.field_type.as_deref());
+                    let type_hint = if php_type.is_empty() { "".into() } else { format!("{} ", php_type) };
+                    out.push_str(&format!("        public {}{}{}", type_hint, field.name, if i < fields.len() - 1 { ",\n" } else { "" }));
                 }
-                out.push_str("}\n");
+                out.push_str("\n    ) {}\n}");
                 out
             }
-            Statement::Yield(val) => {
-                let v = val
-                    .as_ref()
-                    .map(|e| self.transpile_expression(e))
-                    .unwrap_or_default();
-                format!("Fiber::suspend({});", v)
+            StatementKind::Yield(value) => {
+                if let Some(v) = value { format!("Fiber::suspend({});", self.transpile_expression(v)) }
+                else { "Fiber::suspend();".into() }
             }
-            _ => String::new(),
+            StatementKind::Test { name, body } => {
+                let block = self.transpile_block(body);
+                self.test_blocks.push((name.clone(), block));
+                "".into()
+            }
         }
     }
 
-    fn transpile_block(&self, block: &BlockStatement) -> String {
+    pub fn transpile_block(&mut self, block: &BlockStatement) -> String {
         let mut out = String::new();
         for stmt in &block.statements {
-            out.push_str("    ");
-            out.push_str(&self.transpile_statement(stmt));
-            out.push('\n');
+            let s = self.transpile_statement(stmt);
+            for line in s.lines() {
+                out.push_str("    ");
+                out.push_str(line);
+                out.push('\n');
+            }
         }
         out
     }
 
-    pub fn transpile_expression(&self, expr: &Expression) -> String {
-        match expr {
-            Expression::Identifier(val) => {
-                let trimmed = val.trim();
-                match trimmed {
-                    "ctx" | "file" | "db" => format!("${}", trimmed),
-                    _ => trimmed.to_string(),
+    pub fn transpile_expression(&mut self, expr: &Expression) -> String {
+        match &expr.kind {
+            ExpressionKind::Identifier(name) => {
+                if name == "print" { "ZenithRuntime::print".into() }
+                else if name == "println" { "ZenithRuntime::println".into() }
+                else { name.clone() }
+            }
+            ExpressionKind::Variable(name) => name.clone(),
+            ExpressionKind::IntegerLiteral(val) => val.to_string(),
+            ExpressionKind::FloatLiteral(val) => val.to_string(),
+            ExpressionKind::StringLiteral { value, .. } => format!("\"{}\"", value.replace("\"", "\\\"")),
+            ExpressionKind::ArrayLiteral(elements) => {
+                let els: Vec<String> = elements.iter().map(|e| self.transpile_expression(e)).collect();
+                format!("[{}]", els.join(", "))
+            }
+            ExpressionKind::MapLiteral(pairs) => {
+                let mut els = Vec::new();
+                for (k, v) in pairs {
+                    els.push(format!("{} => {}", self.transpile_expression(k), self.transpile_expression(v)));
                 }
+                format!("[{}]", els.join(", "))
             }
-            Expression::Variable(val) => {
-                let clean_val = val.trim_start_matches('$');
-                format!("${}", clean_val)
+            ExpressionKind::PrefixExpression { operator, right } => {
+                format!("{}{}", operator, self.transpile_expression(right))
             }
-            Expression::IntegerLiteral(val) => val.to_string(),
-            Expression::StringLiteral {
-                value,
-                delimiter,
-                is_render,
-            } => {
-                let mut val = value.clone();
-                if *delimiter == '"' {
-                    val = self.transpile_template_string(&val, *is_render);
-                }
-                format!("{}{}{}", delimiter, val, delimiter)
+            ExpressionKind::InfixExpression { left, operator, right } => {
+                let op = match operator.as_str() {
+                    "==" => "===",
+                    "!=" => "!==",
+                    "&&" => "&&",
+                    "||" => "||",
+                    _ => operator,
+                };
+                format!("({} {} {})", self.transpile_expression(left), op, self.transpile_expression(right))
             }
-            Expression::InfixExpression {
-                left,
-                operator,
-                right,
-            } => {
-                let op = if operator == "+" { "." } else { operator };
-                format!(
-                    "({} {} {})",
-                    self.transpile_expression(left),
-                    op,
-                    self.transpile_expression(right)
-                )
+            ExpressionKind::IndexExpression { left, index } => {
+                format!("{}[{}]", self.transpile_expression(left), self.transpile_expression(index))
             }
-            Expression::PrefixExpression { operator, right } => {
-                format!("({}{})", operator, self.transpile_expression(right))
+            ExpressionKind::CallExpression { function, arguments } => {
+                let func = self.transpile_expression(function);
+                let args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
+                format!("{}({})", func, args.join(", "))
             }
-            Expression::CallExpression {
-                function,
-                arguments,
-            } => {
-                let func_name = self.transpile_expression(function);
-                let args: Vec<String> = arguments
-                    .iter()
-                    .map(|a| self.transpile_expression(a))
-                    .collect();
-                if func_name == "print" {
-                    format!("echo {}", args.join(", "))
-                } else {
-                    format!("{}({})", func_name, args.join(", "))
-                }
-            }
-            Expression::MethodCallExpression {
-                object,
-                method,
-                arguments,
-                is_nullsafe,
-            } => {
+            ExpressionKind::MethodCallExpression { object, method, arguments, is_nullsafe } => {
                 let obj = self.transpile_expression(object);
-                let args: Vec<String> = arguments
-                    .iter()
-                    .map(|a| self.transpile_expression(a))
-                    .collect();
-                let op = if *is_nullsafe { "?->" } else { "->" };
-                match method.as_str() {
-                    "length" => format!("strlen({})", obj),
-                    "push" => format!("array_push({}, {})", obj, args.join(", ")),
-                    "parse" if obj == "json" => format!("json_decode({}, true)", args.join(", ")),
-                    "stringify" if obj == "json" => format!("json_encode({})", args.join(", ")),
-                    _ if obj == "native" => {
-                        // Z-Ops: High-performance Rust bridge
-                        // We map this to a special internal call that the Engine catches or
-                        // just a call to a built-in helper that might use ffi or a CLI hook
-                        format!("z_ops_native_call('{}', [{}])", method, args.join(", "))
-                    }
-                    _ => {
-                        let mut use_obj = obj;
-                        if use_obj == "file" {
-                            use_obj = "$file".into();
-                        }
-                        if use_obj == "ctx" {
-                            use_obj = "$ctx".into();
-                        }
-                        if use_obj == "$ctx" {
-                            match method.as_str() {
-                                "query" => {
-                                    if let Some(a) = args.get(0) {
-                                        return format!("$_GET[{}]", a);
-                                    } else {
-                                        return "$_GET".into();
-                                    }
-                                }
-                                "body" => {
-                                    if let Some(a) = args.get(0) {
-                                        return format!("$_POST[{}]", a);
-                                    } else {
-                                        return "$_POST".into();
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        format!("{}{}{}({})", use_obj, op, method, args.join(", "))
-                    }
+                let args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
+                if obj == "native" {
+                    return format!("ZenithRuntime::{}({})", method, args.join(", "));
                 }
+                let is_static = obj.chars().next().map_or(false, |c| c.is_uppercase());
+                let op = if is_static { "::" } else if *is_nullsafe { "?->" } else { "->" };
+                format!("{}{}{}({})", obj, op, method, args.join(", "))
             }
-            Expression::MemberExpression {
-                object,
-                property,
-                is_nullsafe,
-            } => {
-                let mut obj = self.transpile_expression(object);
-                if obj == "ctx" {
-                    obj = "$ctx".into();
-                }
-                if obj == "file" {
-                    obj = "$file".into();
-                }
-
-                let op = if *is_nullsafe { "?->" } else { "->" };
-                if obj == "$ctx" {
-                    match property.as_str() {
-                        "query" => return "$_GET".into(),
-                        "body" => return "$_POST".into(),
-                        _ => {}
-                    }
-                }
+            ExpressionKind::MemberExpression { object, property, is_nullsafe } => {
+                let obj = self.transpile_expression(object);
+                let is_static = obj.chars().next().map_or(false, |c| c.is_uppercase());
+                let op = if is_static { "::" } else if *is_nullsafe { "?->" } else { "->" };
                 format!("{}{}{}", obj, op, property)
             }
-            Expression::ArrayLiteral(elements) => {
-                let elms: Vec<String> = elements
-                    .iter()
-                    .map(|e| self.transpile_expression(e))
-                    .collect();
-                format!("[{}]", elms.join(", "))
+            ExpressionKind::MatchExpression { condition, arms } => {
+                self.transpile_match_expression(condition, arms)
             }
-            Expression::MapLiteral(pairs) => {
-                let p: Vec<String> = pairs
-                    .iter()
-                    .map(|(k, v)| {
-                        format!(
-                            "{} => {}",
-                            self.transpile_expression(k),
-                            self.transpile_expression(v)
-                        )
-                    })
-                    .collect();
-                format!("[{}]", p.join(", "))
+            ExpressionKind::ArrowFunctionExpression { parameters, body, .. } => {
+                let params: Vec<String> = parameters.iter().map(|p| format!("{}{}", self.map_type(p.param_type.as_deref()), p.name)).collect();
+                format!("fn({}) => {}", params.join(", "), self.transpile_expression(body))
             }
-            Expression::IndexExpression { left, index } => {
-                format!(
-                    "{}[{}]",
-                    self.transpile_expression(left),
-                    self.transpile_expression(index)
-                )
-            }
-            Expression::NullCoalesceExpression { left, right } => {
-                format!(
-                    "({} ?? {})",
-                    self.transpile_expression(left),
-                    self.transpile_expression(right)
-                )
-            }
-            Expression::AssignExpression { left, value } => {
-                format!(
-                    "{} = {}",
-                    self.transpile_expression(left),
-                    self.transpile_expression(value)
-                )
-            }
-            Expression::MatchExpression { condition, arms } => {
-                let mut out = format!("match ({}) {{\n", self.transpile_expression(condition));
-                for arm in arms {
-                    out.push_str("        ");
-                    if arm.is_default {
-                        out.push_str("default");
-                    } else {
-                        let vals: Vec<String> = arm
-                            .values
-                            .iter()
-                            .map(|v| self.transpile_expression(v))
-                            .collect();
-                        out.push_str(&vals.join(", "));
-                    }
-                    let result_str = match &arm.result {
-                        Expression::Block(b) => {
-                            if b.statements.len() == 1 {
-                                if let Statement::Expression(e) = &b.statements[0] {
-                                    self.transpile_expression(e)
-                                } else if let Statement::Return(e) = &b.statements[0] {
-                                    self.transpile_expression(e)
-                                } else {
-                                    let block_code = self.transpile_block(b);
-                                    format!("(function() use ($file, $db, $ctx) {{\n            {}\n        }})()", block_code.trim())
-                                }
-                            } else {
-                                let block_code = self.transpile_block(b);
-                                format!("(function() use ($file, $db, $ctx) {{\n            {}\n        }})()", block_code.trim())
-                            }
-                        }
-                        _ => self.transpile_expression(&arm.result),
-                    };
-                    out.push_str(&format!(" => {},\n", result_str));
-                }
-                out.push_str("    }");
-                out
-            }
-            Expression::SqlQueryExpression { query, args, .. } => {
-                let trans_args: Vec<String> =
-                    args.iter().map(|a| self.transpile_expression(a)).collect();
-                let _use_vars = vec!["$db"];
-                // This is simplified but mirrors the Go logic
-                let use_clause = if !trans_args.is_empty() {
-                    let mut v = trans_args.clone();
-                    v.push("$db".into());
-                    v.join(", ")
+            ExpressionKind::PipeExpression { left, right } => {
+                if let ExpressionKind::CallExpression { function, arguments } = &right.kind {
+                    let func = self.transpile_expression(function);
+                    let mut args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
+                    args.insert(0, self.transpile_expression(left));
+                    format!("{}({})", func, args.join(", "))
+                } else if let ExpressionKind::MethodCallExpression { object, method, arguments, is_nullsafe } = &right.kind {
+                    let obj = self.transpile_expression(object);
+                    let mut args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
+                    args.insert(0, self.transpile_expression(left));
+                    let op = if *is_nullsafe { "?->" } else { "->" };
+                    format!("{}{}{}({})", obj, op, method, args.join(", "))
                 } else {
-                    "$db".into()
-                };
-                format!("(function() use ({}) {{ try {{ $stmt = $db->prepare(\"{}\"); $stmt->execute([{}]); return $stmt->fetchAll(); }} catch (Exception $e) {{ return null; }} }})()",
-                    use_clause, query, trans_args.join(", "))
-            }
-            Expression::PipeExpression { left, right } => {
-                let lhs = self.transpile_expression(left);
-                // Similar to Go, we need to handle if right is a call or just an identifier
-                match right.as_ref() {
-                    Expression::CallExpression {
-                        function,
-                        arguments,
-                    } => {
-                        let mut args = vec![lhs];
-                        args.extend(arguments.iter().map(|a| self.transpile_expression(a)));
-                        format!(
-                            "{}({})",
-                            self.transpile_expression(function),
-                            args.join(", ")
-                        )
-                    }
-                    _ => format!("{}({})", self.transpile_expression(right), lhs),
+                    format!("{}({})", self.transpile_expression(right), self.transpile_expression(left))
                 }
             }
-            Expression::ArrowFunctionExpression {
-                parameters,
-                body,
-                return_type,
-            } => {
-                let mut p_list = Vec::new();
-                for p in parameters {
-                    let mut s = String::new();
-                    if let Some(ref t) = p.param_type {
-                        if t != "any" {
-                            s.push_str(t);
-                            s.push(' ');
-                        }
-                    }
-                    let name = if p.name.starts_with('$') {
-                        p.name.clone()
-                    } else {
-                        format!("${}", p.name)
-                    };
-                    s.push_str(&name);
-                    p_list.push(s);
+            ExpressionKind::NullCoalesceExpression { left, right } => {
+                format!("({} ?? {})", self.transpile_expression(left), self.transpile_expression(right))
+            }
+            ExpressionKind::SpawnExpression { body } => {
+                format!("new Fiber(function() {{\n{}}})", self.transpile_statement(body))
+            }
+            ExpressionKind::AssignExpression { left, value } => {
+                format!("{} = {}", self.transpile_expression(left), self.transpile_expression(value))
+            }
+            ExpressionKind::SqlQueryExpression { query, args, .. } => {
+                let mut q = query.clone();
+                for arg in args {
+                    q = q.replacen("?", &format!("' . ({}) . '", self.transpile_expression(arg)), 1);
                 }
-                let ret = return_type
-                    .as_ref()
-                    .map(|t| format!(": {}", t))
-                    .unwrap_or_default();
-                format!(
-                    "fn({}){} => {}",
-                    p_list.join(", "),
-                    ret,
-                    self.transpile_expression(body)
-                )
+                format!("$db->query('{}')", q)
             }
-            Expression::SpawnExpression { body } => {
-                let b = self.transpile_statement(body);
-                format!("(function() use ($file, $db, $ctx) {{ $f = new Fiber(function() use ($file, $db, $ctx) {{ {} }}); $f->start(); return $f; }})()", b)
+            ExpressionKind::StructLiteral { name, fields } => {
+                let fds: Vec<String> = fields.iter().map(|(n, v)| {
+                    let clean_n = if n.starts_with('$') { &n[1..] } else { n };
+                    format!("'{}' => {}", clean_n, self.transpile_expression(v))
+                }).collect();
+                format!("new {}(...[{}])", name, fds.join(", "))
             }
-            Expression::Block(b) => {
-                let block_code = self.transpile_block(b);
-                format!(
-                    "(function() use ($file, $db, $ctx) {{\n    {}\n}})()",
-                    block_code.trim()
-                )
+            ExpressionKind::Block(block) => {
+                format!("(function() {{\n{}    }})()", self.transpile_block(block))
             }
         }
     }
-    fn transpile_template_string(&self, input: &str, escape_html: bool) -> String {
-        let mut out = String::new();
-        let mut i = 0;
-        let bytes = input.as_bytes();
 
-        while i < bytes.len() {
-            if bytes[i] == b'{' && i + 1 < bytes.len() {
-                let mut j = i + 1;
-                while j < bytes.len() && bytes[j] != b'}' {
-                    j += 1;
-                }
-
-                if j < bytes.len() {
-                    let expr = &input[i + 1..j];
-                    if self.is_valid_interpolation(expr) {
-                        let transpiled = self.wrap_expr_if_needed(expr);
-                        if escape_html {
-                            out.push_str(&format!(
-                                "\" . htmlspecialchars((string)({}), ENT_QUOTES, 'UTF-8') . \"",
-                                transpiled
-                            ));
-                        } else {
-                            out.push_str(&format!("{{ ({}) }}", transpiled));
-                        }
-                        i = j + 1;
-                        continue;
-                    }
-                }
-            }
-            out.push(bytes[i] as char);
-            i += 1;
+    fn transpile_function(&mut self, name: &str, parameters: &[Parameter], body: &BlockStatement, is_render: bool, is_memoized: bool) -> String {
+        let mut out: String = if is_render { "function ".into() } else { "function ".into() };
+        out.push_str(name);
+        let params: Vec<String> = parameters.iter().map(|p| {
+            let t = self.map_type(p.param_type.as_deref());
+            format!("{}{}", if t.is_empty() { "".into() } else { format!("{} ", t) }, p.name)
+        }).collect();
+        out.push_str(&format!("({}) {{\n", params.join(", ")));
+        out.push_str("    global $file, $db, $ctx;\n");
+        if is_memoized {
+            out.push_str(&format!("    static $memo_cache = [];\n"));
+            let keys: Vec<String> = parameters.iter().map(|p| p.name.clone()).collect();
+            out.push_str(&format!("    $memo_key = md5(json_encode([{}]));\n", keys.join(", ")));
+            out.push_str("    if (isset($memo_cache[$memo_key])) return $memo_cache[$memo_key];\n");
         }
+        out.push_str(&self.transpile_block(body));
+        if is_memoized {
+            // This is tricky as we need to wrap the return.
+            // Simplified for now.
+        }
+        out.push_str("}");
         out
     }
 
-    fn is_valid_interpolation(&self, expr: &str) -> bool {
-        let e = expr.trim();
-        if e.is_empty() {
-            return false;
+    fn transpile_match_expression(&mut self, condition: &Expression, arms: &[crate::core::ast::MatchArm]) -> String {
+        let cond_val = "$match_val";
+        let mut out = format!("(function() use ($file, $db, $ctx) {{\n");
+        out.push_str(&format!("    {} = {};\n", cond_val, self.transpile_expression(condition)));
+        
+        for arm in arms {
+            if arm.is_default {
+                out.push_str("    return ");
+                out.push_str(&self.transpile_expression(&arm.result));
+                out.push_str(";\n");
+            } else {
+                let mut condition_checks = Vec::new();
+                let mut variable_bindings = Vec::new();
+                
+                for pattern in &arm.patterns {
+                    let (check, bindings) = self.transpile_pattern_data(pattern, cond_val);
+                    condition_checks.push(check);
+                    variable_bindings.push(bindings);
+                }
+                
+                out.push_str(&format!("    if ({}) {{\n", condition_checks.join(" || ")));
+                if !variable_bindings.is_empty() {
+                    for binding in &variable_bindings[0] {
+                        out.push_str(&format!("        {};\n", binding));
+                    }
+                }
+                out.push_str("        return ");
+                out.push_str(&self.transpile_expression(&arm.result));
+                out.push_str(";\n");
+                out.push_str("    }\n");
+            }
         }
-        // If it contains CSS chars like : or ; or multiple spaces, it's probably not a Zenith expression
-        if e.contains(':') || e.contains(';') || e.contains('\n') {
-            return false;
-        }
-        // Simple heuristic: starts with $, ctx, file, native, or an identifier
-        e.starts_with('$')
-            || e.starts_with("ctx")
-            || e.starts_with("file")
-            || e.starts_with("native")
-            || e.chars().next().unwrap_or(' ').is_ascii_alphabetic()
+        out.push_str("    return null;\n");
+        out.push_str("})()");
+        out
     }
 
-    fn wrap_expr_if_needed(&self, expr: &str) -> String {
-        let mut e = expr.trim().to_string();
-        if e.starts_with("ctx.") {
-            e = e.replace("ctx.", "$ctx->");
-        }
-        if e.starts_with("$ctx.") {
-            e = e.replace("$ctx.", "$ctx->");
-        }
-        if e.starts_with("file.") {
-            e = e.replace("file.", "$file->");
-        }
-        if e.starts_with("$file.") {
-            e = e.replace("$file.", "$file->");
-        }
-        if e.starts_with("native.") {
-            let parts: Vec<&str> = e.splitn(2, '.').collect();
-            if parts.len() == 2 {
-                let method = parts[1].split('(').next().unwrap_or("");
-                let args = if parts[1].contains('(') {
-                    parts[1]
-                        .split('(')
-                        .nth(1)
-                        .unwrap_or("")
-                        .trim_end_matches(')')
-                } else {
-                    ""
-                };
-                return format!("z_ops_native_call('{}', [{}])", method, args);
+    fn transpile_pattern_data(&mut self, pattern: &crate::core::ast::Pattern, val: &str) -> (String, Vec<String>) {
+        use crate::core::ast::PatternKind;
+        match &pattern.kind {
+            PatternKind::Wildcard => ("true".into(), vec![]),
+            PatternKind::Literal(expr) => (format!("{} === {}", val, self.transpile_expression(expr)), vec![]),
+            PatternKind::Identifier(name) => {
+                 let is_static = name.chars().next().map_or(false, |c| c.is_uppercase());
+                 if is_static {
+                     (format!("{} === {}", val, name), vec![])
+                 } else {
+                     let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
+                     ("true".into(), vec![format!("{} = {}", clean_name, val)])
+                 }
+            },
+            PatternKind::Struct { fields, .. } => {
+                let mut checks = vec![format!("is_object({})", val)];
+                let mut bindings = vec![];
+                for (field_name, field_pattern) in fields {
+                    let clean_field = if field_name.starts_with('$') { &field_name[1..] } else { field_name };
+                    let field_access = format!("{}->{}", val, clean_field);
+                    let (check, f_bindings) = self.transpile_pattern_data(field_pattern, &field_access);
+                    if check != "true" {
+                        checks.push(check);
+                    }
+                    bindings.extend(f_bindings);
+                }
+                (checks.join(" && "), bindings)
             }
-        }
-        if !e.starts_with('$') && !e.contains("->") && !e.contains('(') {
-            match e.as_str() {
-                "ctx" | "file" | "db" => format!("${}", e),
-                _ => e,
-            }
-        } else {
-            e
         }
     }
 
     pub fn get_php_header(&self) -> String {
-        let mut out = String::from("<?php\n\n");
-        out.push_str("if (!class_exists('Context')) { class Context { public $path; public $query; public $body; } }\n\n");
-
-        let functions = vec![
-            ("fetch", "function fetch($url) {\n    $opts = [\"http\" => [\"header\" => \"User-Agent: ZenithRuntime/1.0\\r\\n\"]];\n    return file_get_contents($url, false, stream_context_create($opts));\n}"),
-            ("json", "function json($data) {\n    return is_string($data) ? json_decode($data, true) : json_encode($data);\n}"),
-            ("env", "function env($key) {\n    return getenv($key);\n}"),
-            ("println", "function println($data) {\n    echo $data . \"\\n\";\n}"),
-            ("redirect", "function redirect($url) {\n    header(\"Location: \" . $url);\n    exit;\n}"),
-            ("z_assert", "function z_assert($condition, $message = \"Assertion failed\") {\n    if ($condition) {\n        echo \"  [OK] Pass: \" . $message . \"\\n\";\n    } else {\n        echo \"  [FAIL] FAIL: \" . $message . \"\\n\";\n        exit(1);\n    }\n}"),
-            ("z_ops_native_call", "function z_ops_native_call($fn, $args) {\n    switch($fn) {\n        case 'crypto_hash': return hash('sha256', $args[0]);\n        default: return 'Rust Native: ' . $fn . ' not implemented yet';\n    }\n}"),
-        ];
-
-        for (name, body) in functions {
-            out.push_str(&format!(
-                "if (!function_exists('{}')) {{\n{}\n}}\n\n",
-                name, body
-            ));
-        }
-
-        out.push_str("if (!class_exists('ZenithFile')) {\n    class ZenithFile {\n        public function read($path) { return file_get_contents($path); }\n        public function write($path, $data) { return file_put_contents($path, $data); }\n    }\n}\n");
-        out.push_str("if (!isset($file)) { $file = new ZenithFile(); }\n");
-        out.push_str("if (!isset($ctx)) {\n");
-        out.push_str("    $ctx = new Context();\n");
-        out.push_str("    $ctx->path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);\n");
-        out.push_str("    $ctx->query = $_GET ?? [];\n");
-        out.push_str("    $ctx->body = $_POST ?? [];\n");
+        let mut out = String::new();
+        out.push_str("<?php\n\n");
+        out.push_str("class ZenithRuntime {\n");
+        out.push_str("    public static function crypto_hash($s) { return hash('sha256', $s); }\n");
+        out.push_str("    public static function toString($v) { if ($v instanceof \\UnitEnum) return $v->name; if (is_array($v)) return json_encode($v); return (string)$v; }\n");
+        out.push_str("    public static function print(...$args) { foreach ($args as $arg) echo self::toString($arg); }\n");
+        out.push_str("    public static function println(...$args) { foreach ($args as $arg) echo self::toString($arg); echo PHP_EOL; }\n");
         out.push_str("}\n\n");
-
+        out.push_str("$ctx = new stdClass();\n");
+        out.push_str("$db = new class {\n");
+        out.push_str("    public function query($q) {\n");
+        out.push_str("        // Basic mock SQL execution\n");
+        out.push_str("        return [];\n");
+        out.push_str("    }\n");
+        out.push_str("};\n\n");
         out
+    }
+
+    pub fn get_test_runner(&self) -> String {
+        let mut out = String::new();
+        out.push_str("\n\n// Test Runner\n");
+        out.push_str("$total = 0; $passed = 0;\n");
+        for (name, block) in &self.test_blocks {
+            out.push_str(&format!("echo \"Running test '{}'...\";\n", name));
+            out.push_str("try {\n");
+            out.push_str(block);
+            out.push_str("    echo \" [PASS]\\n\"; $passed++;\n");
+            out.push_str("} catch (Exception $e) {\n");
+            out.push_str("    echo \" [FAIL] \" . $e->getMessage() . \"\\n\";\n");
+            out.push_str("}\n");
+            out.push_str("$total++;\n");
+        }
+        out.push_str("echo \"\\nTests: $passed/$total passed\\n\";\n");
+        out
+    }
+
+    fn map_type(&self, t: Option<&str>) -> String {
+        match t {
+            Some("string") => "string".into(),
+            Some("int") => "int".into(),
+            Some("bool") => "bool".into(),
+            Some("float") => "float".into(),
+            Some("any") => "".into(),
+            Some(x) if x.ends_with("[]") => "array".into(),
+            _ => "".into(),
+        }
     }
 }

@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "zenith")]
-#[command(about = "The Modern PHP & Rust Runtime", long_about = None)]
+#[command(about = "The modern PHP programming language", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -27,6 +27,11 @@ enum Commands {
     Cache {
         #[arg(short, long)]
         reload: bool,
+    },
+    Test {
+        file: Option<String>,
+        #[arg(short, long)]
+        php: bool,
     },
     Install,
 }
@@ -74,6 +79,11 @@ pub fn run_cli() {
                 println!("[Zenith] Cache is active.");
             }
         }
+        Commands::Test { file, php } => {
+            if let Err(e) = execute_test(file.as_ref(), *php) {
+                println!("{}", e);
+            }
+        }
         Commands::Install => {
             println!("[Zenith] Installing dependencies...");
             if std::path::Path::new("composer.json").exists() {
@@ -99,7 +109,8 @@ fn execute_run(file: &str, show_php: bool) -> anyhow::Result<()> {
             if show_php {
                 println!("{}", php_code);
             } else {
-                match engine.execute(&php_code) {
+                let source = std::fs::read_to_string(file).unwrap_or_default();
+                match engine.execute_with_context(&php_code, file, &source) {
                     Ok(output) => print!("{}", output),
                     Err(e) => println!("[!] Execution Error: {}", e),
                 }
@@ -107,5 +118,72 @@ fn execute_run(file: &str, show_php: bool) -> anyhow::Result<()> {
         }
         Err(e) => println!("[!] Transpilation Error: {}", e),
     }
+    Ok(())
+}
+
+fn execute_test(file: Option<&String>, show_php: bool) -> anyhow::Result<()> {
+    use colored::Colorize;
+    use walkdir::WalkDir;
+
+    let engine = Engine::new(EngineOptions {
+        allow_read: true,
+        allow_net: true,
+        allow_env: true,
+    });
+
+    let mut files = Vec::new();
+
+    if let Some(f) = file {
+        files.push(f.clone());
+    } else {
+        
+        let test_regex = regex::Regex::new(r#"(?m)^\s*test\s+"#).unwrap();
+
+        let mut find_zen_files = |dir: &str| {
+            for entry in WalkDir::new(dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file() && e.path().extension().map_or(false, |ext| ext == "zen"))
+            {
+                if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                    if test_regex.is_match(&content) {
+                        files.push(entry.path().to_string_lossy().to_string());
+                    }
+                }
+            }
+        };
+
+        find_zen_files("src");
+        if std::path::Path::new("test").exists() {
+            find_zen_files("test");
+        }
+    }
+
+    if files.is_empty() {
+        println!("[!] No .zen files found for testing.");
+        return Ok(());
+    }
+
+    println!("\n{}", "Zenith Test Runner".bold().magenta());
+    println!("{}", "=".repeat(40));
+
+    for f in files {
+        println!("\nFile: {}", f.bold().cyan());
+        match engine.transpile_test(&f) {
+            Ok(php_code) => {
+                if show_php {
+                    println!("{}", php_code);
+                } else {
+                    let source = std::fs::read_to_string(&f).unwrap_or_default();
+                    match engine.execute_with_context(&php_code, &f, &source) {
+                        Ok(output) => print!("{}", output),
+                        Err(e) => println!("[!] Test Execution Error: {}", e),
+                    }
+                }
+            }
+            Err(e) => println!("[!] Transpilation Error: {}", e),
+        }
+    }
+
     Ok(())
 }

@@ -44,7 +44,7 @@ impl Diagnostic {
             DiagnosticLevel::Note => "note".blue().bold(),
         };
 
-        // Convert span to line/col
+        
         let mut line_num = 1;
         let mut col_num = 1;
         let mut line_start = 0;
@@ -70,7 +70,7 @@ impl Diagnostic {
         );
         println!("   {}", "|".blue().bold());
 
-        // Get the current line
+        
         let line_end = source[line_start..]
             .find('\n')
             .map(|n| line_start + n)

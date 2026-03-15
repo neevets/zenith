@@ -1,6 +1,6 @@
 use crate::codegen::transpiler::Transpiler;
 use crate::core::analyzer::Analyzer;
-use crate::core::ast::Statement;
+use crate::core::ast::StatementKind;
 use crate::core::cache::Cache;
 use crate::core::lexer::Lexer;
 use crate::core::parser::Parser;
@@ -29,13 +29,18 @@ impl Engine {
     }
 
     pub fn transpile(&self, filename: &str) -> anyhow::Result<String> {
-        self.transpile_recursive(filename, &mut HashMap::new())
+        self.transpile_recursive(filename, &mut HashMap::new(), false)
+    }
+
+    pub fn transpile_test(&self, filename: &str) -> anyhow::Result<String> {
+        self.transpile_recursive(filename, &mut HashMap::new(), true)
     }
 
     fn transpile_recursive(
         &self,
         filename: &str,
         module_map: &mut HashMap<String, String>,
+        is_test: bool,
     ) -> anyhow::Result<String> {
         let abs_path = if filename.starts_with("http") {
             PathBuf::from(filename)
@@ -102,27 +107,47 @@ impl Engine {
             ));
         }
 
-        // Handle imports recursively
+        
         for import_stmt in &program.imports {
-            if let Statement::Import(path) = import_stmt {
+            if let StatementKind::Import(path) = &import_stmt.kind {
                 if path.starts_with("http") && !module_map.contains_key(path) {
-                    let _ = self.transpile_recursive(path, module_map)?;
+                    let _ = self.transpile_recursive(path, module_map, is_test)?;
+                } else if !module_map.contains_key(path) {
+                    let _ = self.transpile_recursive(path, module_map, is_test)?;
                 }
             }
         }
 
         let mut t = Transpiler::new();
+        t.is_test_mode = is_test;
         t.set_module_map(module_map.clone());
+        t.set_lifecycle_map(lc_map.clone());
 
-        let mut php_code = t.get_php_header();
+        let header = t.get_php_header();
+        let mut php_code = String::new();
 
-        // Detect Composer
+        if let Some(ref c) = cm {
+            let runtime_path = c.save_runtime(&header)?;
+            php_code.push_str("<?php\n\ndeclare(strict_types=1);\n\n");
+            php_code.push_str(&format!("require_once '{}';\n", runtime_path.to_string_lossy()));
+        } else {
+            php_code.push_str(&header);
+        }
+
+        if is_test {
+            php_code.push_str("error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);\n");
+        }
+
         let composer_path = std::path::Path::new("vendor/autoload.php");
         if composer_path.exists() {
             php_code.push_str("require_once __DIR__ . '/vendor/autoload.php';\n");
         }
 
         php_code.push_str(&t.transpile(&program));
+
+        if is_test {
+            php_code.push_str(&t.get_test_runner());
+        }
 
         if let Some(ref c) = cm {
             if !source_hash.is_empty() {
@@ -175,18 +200,16 @@ impl Engine {
         args.push(tmp_path.to_string_lossy().to_string());
 
         let output = Command::new(php_bin).args(args).output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            // Try to parse the PHP error for beautiful diagnostics
             let re = regex::Regex::new(r"PHP (.*?) error: (.*?) in (.*?) on line (\d+)").unwrap();
             if let Some(caps) = re.captures(&stderr) {
                 let msg = &caps[2];
                 let line: usize = caps[4].parse().unwrap_or(0);
 
-                // For PHP execution errors, we don't have a precise Zenith span yet
-                // We'll use a dummy span and try to render it if we have the zenith source
                 use crate::core::diagnostics::Diagnostic;
                 let mut diag = Diagnostic::new_error(msg, filename, 0..1);
                 diag = diag.with_help("This error occurred in the generated PHP runner.");
@@ -194,17 +217,22 @@ impl Engine {
                 if !zenith_source.is_empty() {
                     diag.render(zenith_source);
                 } else {
-                    // Fallback if we don't have the source
                     println!("error: {}", msg.red().bold());
                     println!("  --> {}:{}", filename, line);
                 }
 
+                if !stdout.is_empty() {
+                    return Ok(stdout);
+                }
                 return Err(anyhow::anyhow!("Execution failed."));
             }
 
+            if !stdout.is_empty() {
+                return Ok(stdout);
+            }
             return Err(anyhow::anyhow!("PHP Execution Error:\n{}", stderr));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(stdout)
     }
 }

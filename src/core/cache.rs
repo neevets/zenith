@@ -69,4 +69,10 @@ impl Cache {
             .join("transpiled")
             .join(format!("{}.php", source_hash))
     }
+
+    pub fn save_runtime(&self, php_code: &str) -> anyhow::Result<PathBuf> {
+        let path = self.base_dir.join("runtime.php");
+        fs::write(&path, php_code)?;
+        Ok(path)
+    }
 }

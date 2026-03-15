@@ -20,7 +20,7 @@ async fn handle_zenith(req: HttpRequest) -> impl Responder {
         return HttpResponse::NotFound().body("Not Found");
     }
 
-    // Transpile libraries if needed (simplified for now)
+    
 
     let full_path = format!(".{}", path);
     let engine = Engine::new(Options {
@@ -31,7 +31,7 @@ async fn handle_zenith(req: HttpRequest) -> impl Responder {
 
     match engine.transpile(&full_path) {
         Ok(php_code) => {
-            // Inject context matching the Go implementation
+            
             let ctx_init = format!(
                 "\n$ctx = new Context();\n$ctx->path = \"{}\";\n$ctx->query = (object)$_GET;\n$ctx->body = (object)$_POST;\n$db = null;\n",
                 path
@@ -66,3 +66,4 @@ pub async fn start(port: &str) -> std::io::Result<()> {
         .run()
         .await
 }
+

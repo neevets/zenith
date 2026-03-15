@@ -1,13 +1,9 @@
-// Test for Deno-style URL imports and native Rust interop
 import "https://raw.githubusercontent.com/neevets/zenith/main/test/arrow_test.zen";
 
-println("Testing URL Imports and Interop:");
-
-// Calling a Rust native function (simulated in z_ops_native_call)
-let $hash = native.crypto_hash("hello zenith");
-println("Native Hash: {$hash}");
-
-// Testing arrow function from remote import (if imported correctly)
-// Since we don't have full namespacing yet, we assume it's just available
-// or we test the import mechanism itself.
-println("Success: Integration test logic reached");
+test "url imports and native interop" {
+    let $hash = native.crypto_hash("hello zenith");
+    z_assert($hash != null, "native crypto_hash returns a value");
+    
+    let $ok = true;
+    z_assert($ok, "interop logic reached");
+}

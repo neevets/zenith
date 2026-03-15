@@ -1,12 +1,17 @@
 /target/
 **/*.rs.bk
-
 /zenith
 
-.vscode/
-!.vscode/
+node_modules/
+out/
+dist/
+*.vsix
+.eslintcache
+
+.vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+!.vscode/launch.json
 .idea/
 *.swp
 *.swo

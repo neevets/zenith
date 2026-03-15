@@ -1,1 +1,8 @@
-let $fiber = spawn { print("Fiber started\n"); yield "suspended"; print("Fiber resumed\n"); }; print("Main started\n"); $fiber.resume();
+test "fiber spawn and resume" {
+    let $fiber = spawn { 
+        yield "first"; 
+        yield "second";
+    }; 
+    let $res = $fiber.resume();
+    z_assert($res == "second", "fiber resumed and yielded second value");
+}

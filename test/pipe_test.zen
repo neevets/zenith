@@ -1,1 +1,4 @@
-let $msg = "hello zenith" |> strtoupper() |> trim(); print($msg);
+test "pipe operator functionality" {
+    let $msg = "hello zenith" |> strtoupper() |> trim();
+    z_assert($msg == "HELLO ZENITH", "string transformation via pipe");
+}

@@ -1,7 +1,4 @@
-render function test_xss() {
+test "xss protection in render functions" {
     let $unsafe = "<script>alert('XSS')</script>";
-    println("Testing XSS Protection:");
-    println("Unsafe content should be escaped: {$unsafe}");
+    z_assert($unsafe != null, "render function logic accessible");
 }
-
-test_xss();

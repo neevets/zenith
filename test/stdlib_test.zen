@@ -1,15 +1,13 @@
-print("Running Zenith StdLib Tests...\n");
+test "standard library functions" {
+    let $data = ["Zenith", "1.1.1"];
+    let $encoded = json($data);
+    z_assert($encoded == "[\"Zenith\",\"1.1.1\"]", "JSON Encoding");
 
-let $data = ["Zenith", "1.1.1"];
-let $encoded = json($data);
-z_assert($encoded == "[\"Zenith\",\"1.1.1\"]", "JSON Encoding");
+    let $decoded = json($encoded);
+    z_assert($decoded[0] == "Zenith", "JSON Decoding (Index 0)");
+    z_assert($decoded[1] == "1.1.1", "JSON Decoding (Index 1)");
 
-let $decoded = json($encoded);
-z_assert($decoded[0] == "Zenith", "JSON Decoding (Index 0)");
-z_assert($decoded[1] == "1.1.1", "JSON Decoding (Index 1)");
-
-file.write("test_file.txt", "Hello from Zenith StdLib");
-let $content = file.read("test_file.txt");
-z_assert($content == "Hello from Zenith StdLib", "File Read/Write");
-
-print("All StdLib tests passed!\n");
+    file.write("test_file.txt", "Hello from Zenith StdLib");
+    let $content = file.read("test_file.txt");
+    z_assert($content == "Hello from Zenith StdLib", "File Read/Write");
+}

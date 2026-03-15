@@ -6,5 +6,6 @@
   "[zenith]": {
     "editor.tabSize": 2,
     "editor.insertSpaces": true
-  }
+  },
+  "git.ignoreLimitWarning": true
 }

@@ -1,1 +1,5 @@
-let $user = null; let $name = $user?->getName(); print($name);
+test "nullsafe operator" {
+    let $user = null;
+    let $name = $user?->getName();
+    z_assert($name == null, "nullsafe member access on null");
+}
