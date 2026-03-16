@@ -12,7 +12,7 @@ We currently provide security patches and active support for the following versi
 
 ## Reporting a Vulnerability
 
-If you discover a vulnerability in the compiler or in the **Quantum Shield**, we want to know immediately. Please **open a public GitHub Issue**; or , if you prefer, use our private reporting channel to protect users while we work on a fix.
+If you discover a vulnerability in the compiler or in the **Quantum Shield**, we want to know immediately. Please **do not open a public GitHub Issue**; instead, use our private reporting channel to protect users while we work on a fix.
 
 **Contact:**
 
