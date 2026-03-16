@@ -5,9 +5,10 @@ on:
     branches: [main]
     paths:
       - scripts/install.sh
+      - scripts/install.ps1
       - docs/installation.md
       - README.md
-      - .github/workflows/pages-installer.yml
+      - .github/workflows/installer.yml
   workflow_dispatch:
 
 permissions:
@@ -28,8 +29,12 @@ jobs:
       - name: Prepare Pages artifact
         run: |
           mkdir -p public
+          # Copiamos ambos instaladores (asumiendo que están en scripts/)
           cp scripts/install.sh public/install.sh
+          cp scripts/install.ps1 public/install.ps1
           chmod +x public/install.sh
+          
+          # Generamos el index.html con las rutas dinámicas
           cat > public/index.html <<'HTML'
           <!doctype html>
           <html lang="en">
@@ -37,13 +42,21 @@ jobs:
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1" />
               <title>Zenith Installer</title>
+              <style>
+                body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f4f9; }
+                pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+                h1 { color: #333; }
+              </style>
             </head>
             <body>
               <h1>Zenith</h1>
-              <p>auto-detects architecture and installs the latest stable release.</p>
-              <pre>curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y</pre>
-              <br>
-              <pre>iwr -useb https://neevets.github.io/zenith/install.ps1 | iex</pre>
+              <p>Universal installer: auto-detects architecture and installs the latest stable release.</p>
+              
+              <h3>Linux / MacOS</h3>
+              <pre>curl -fsSL ${{ steps.deployment.outputs.page_url }}install.sh | sh -s -- -y</pre>
+              
+              <h3>Windows (PowerShell)</h3>
+              <pre>iwr -useb ${{ steps.deployment.outputs.page_url }}install.ps1 | iex</pre>
             </body>
           </html>
           HTML
