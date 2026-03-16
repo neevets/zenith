@@ -7,7 +7,11 @@
 </h1>
 
 <p>
-  <img src="https://github.com/neevets/zenith/actions/workflows/tests.yml/badge.svg" alt="Zenith Tests">
+  <img src="https://github.com/neevets/zenith/actions/workflows/tests.yml/badge.svg" alt="Tests">
+  <img src="https://img.shields.io/github/license/neevets/zenith" alt="License">
+  <br>
+  <img src="https://img.shields.io/github/stars/neevets/zenith" alt="Stars">
+  <img src="https://img.shields.io/github/forks/neevets/zenith" alt="Forks">
 </p>
 
 </div>
