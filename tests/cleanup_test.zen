@@ -1,0 +1,4 @@
+test "Automatic Cleanup" {
+    file.write("temp_test_cleanup.txt", "This file should be deleted automatically");
+    z_assert(file.exists("temp_test_cleanup.txt"), "File should exist before test finishes");
+}

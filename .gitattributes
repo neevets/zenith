@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.vsix binary
+
+*.rs text
+*.ts text
+*.json text
+*.zen text
+*.md text

@@ -1,0 +1,3 @@
+test "context path access" {
+    z_assert(ctx.path != null, "ctx.path is accessible");
+}

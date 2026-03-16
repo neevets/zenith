@@ -1,0 +1,4 @@
+test "arrow_syntax_test" {
+    let $add = function ($a: int, $b: int): int => $a + $b;
+    z_assert($add(5, 10) == 15, "arrow function execution");
+}

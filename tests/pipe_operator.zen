@@ -1,0 +1,5 @@
+let $data: string = "  zenith language  ";
+let $result: string = $data |> trim() |> strtoupper();
+
+print("Original: [" + $data + "]");
+print("Result: " + $result);

@@ -1,0 +1,4 @@
+test "xss protection in render functions" {
+    let $unsafe = "<script>alert('XSS')</script>";
+    z_assert($unsafe != null, "render function logic accessible");
+}

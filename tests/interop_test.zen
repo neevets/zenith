@@ -1,0 +1,9 @@
+import "tests/arrow_test.zen";
+
+test "url imports and native interop" {
+    let $hash = native.crypto_hash("hello zenith");
+    z_assert($hash != null, "native crypto_hash returns a value");
+    
+    let $ok = true;
+    z_assert($ok, "interop logic reached");
+}

@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "*.zen": "zenith",
+    "*.zenith": "zenith"
+  },
+  "[zenith]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "git.ignoreLimitWarning": true
+}

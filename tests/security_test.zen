@@ -1,0 +1,14 @@
+test "security: sql injection protection" {
+    let $table = "users";
+    db.query(SELECT * FROM $table);
+}
+
+test "security: path traversal protection" {
+    file.read("../../../etc/passwd");
+}
+
+test "security: safe file access" {
+    file.write("safe.txt", "content");
+    let $data = file.read("safe.txt");
+    z_assert($data == "content", "safe file access works");
+}

@@ -1,0 +1,60 @@
+name: Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/install.sh
+      - docs/installation.md
+      - README.md
+      - .github/workflows/pages-installer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p public
+          cp scripts/install.sh public/install.sh
+          chmod +x public/install.sh
+          cat > public/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Zenith Installer</title>
+            </head>
+            <body>
+              <h1>Zenith Installer</h1>
+              <p>Auto-detect OS and architecture, then install the latest release.</p>
+              <pre>curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y</pre>
+              <pre>wget -qO- https://neevets.github.io/zenith/install.sh | sh -s -- -y</pre>
+            </body>
+          </html>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

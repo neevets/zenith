@@ -1,0 +1,8 @@
+test "match expression default case" {
+    let $x = 20;
+    let $res = match($x) {
+        1 => "One",
+        default => "Many",
+    };
+    z_assert($res == "Many", "match default fallback");
+}
