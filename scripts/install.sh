@@ -32,10 +32,10 @@ Zenith installer
 Usage: install.sh [OPTIONS]
 
 Options:
-  -q, --quiet         Reduce output
-  -y                  Skip confirmation prompt
-      --to <DIR>      Install directory
-  -h, --help          Show this help
+  -q, --quiet        Reduce output
+  -y                 Skip confirmation prompt
+      --to <DIR>     Install directory
+  -h, --help         Show this help
 USAGE
 }
 
@@ -156,18 +156,11 @@ downloader() {
     local d
     d="$RETVAL"
     if [ "$d" = "curl" ]; then
-        if check_cmd grep && curl --help all 2>/dev/null | grep -q -- '--proto'; then
-            curl --proto '=https' --tlsv1.2 --silent --show-error --fail --location "$url" --output "$out"
-        else
-            curl --silent --show-error --fail --location "$url" --output "$out"
-        fi
+        curl --silent --show-error --fail --location "$url" --output "$out"
     else
-        wget "$url" -O "$out"
+        wget -q "$url" -O "$out"
     fi
     local st=$?
-    if [ $st -ne 0 ]; then
-        err "artifact not found for $target"
-    fi
     return $st
 }
 
@@ -182,10 +175,6 @@ parse_args() {
                 ;;
             --to)
                 shift
-                if [ $# -eq 0 ]; then
-                    err "--to requires a directory"
-                    exit 1
-                fi
                 ZENITH_INSTALL_DIR="$1"
                 ;;
             -h|--help)
@@ -194,7 +183,6 @@ parse_args() {
                 ;;
             *)
                 err "unknown option: $1"
-                usage
                 exit 1
                 ;;
         esac
@@ -207,7 +195,6 @@ main() {
     need_cmd uname
     need_cmd mktemp
     need_cmd tar
-    need_cmd chmod
     need_cmd mkdir
     need_cmd rm
 
@@ -215,8 +202,8 @@ main() {
     local target
     target="$RETVAL"
     local platform
-    local arch
     platform="${target%-*}"
+    local arch
     arch="${target#*-}"
 
     local binary_file
@@ -228,9 +215,9 @@ main() {
 
     local candidates
     if [ "$platform" = "windows" ]; then
-        candidates="zenith-windows-${arch}.tar.gz zenith-windows-amd64.tar.gz"
+        candidates="zenith-windows-${arch}.tar.gz zenith-windows-x86_64.tar.gz"
     elif [ "$platform" = "linux" ]; then
-        candidates="zenith-linux-${arch}.tar.gz zenith-linux-amd64.tar.gz"
+        candidates="zenith-linux-${arch}.tar.gz zenith-linux-x86_64.tar.gz"
     else
         candidates="zenith-macos-${arch}.tar.gz zenith-macos-arm64.tar.gz"
     fi
@@ -238,12 +225,9 @@ main() {
     ZENITH_TMP_DIR="$(mktemp -d)"
     trap 'cleanup_tmp_dir' EXIT INT TERM
 
-    local selected
-    selected=""
-    local artifact
+    local selected=""
     for artifact in $candidates; do
-        local url
-        url="https://github.com/${ZENITH_REPO}/releases/latest/download/${artifact}"
+        local url="https://github.com/${ZENITH_REPO}/releases/latest/download/${artifact}"
         if downloader "$url" "$ZENITH_TMP_DIR/zenith.tar.gz" "$target" >/dev/null 2>&1; then
             selected="$artifact"
             break
@@ -255,29 +239,23 @@ main() {
         exit 1
     fi
 
-    local final_url
-    final_url="https://github.com/${ZENITH_REPO}/releases/latest/download/${selected}"
+    local final_url="https://github.com/${ZENITH_REPO}/releases/latest/download/${selected}"
     say "target: $target"
     say "downloading: $final_url"
     ensure downloader "$final_url" "$ZENITH_TMP_DIR/zenith.tar.gz" "$target"
     ensure tar -xzf "$ZENITH_TMP_DIR/zenith.tar.gz" -C "$ZENITH_TMP_DIR"
 
     local source_bin
-    source_bin="$ZENITH_TMP_DIR/$binary_file"
-    if [ ! -f "$source_bin" ]; then
-        source_bin="$(find "$ZENITH_TMP_DIR" -type f \( -name "zenith" -o -name "zenith.exe" \) | head -n 1)"
-    fi
+    source_bin="$(find "$ZENITH_TMP_DIR" -type f \( -name "zenith" -o -name "zenith.exe" \) | head -n 1)"
 
     if [ -z "$source_bin" ] || [ ! -f "$source_bin" ]; then
-        err "binary not found in archive"
+        err "binary not found"
         exit 1
     fi
 
     local install_dir
     if [ -n "$ZENITH_INSTALL_DIR" ]; then
         install_dir="$ZENITH_INSTALL_DIR"
-    elif [ "$platform" = "windows" ]; then
-        install_dir="$HOME/.local/bin"
     elif [ -w "/usr/local/bin" ]; then
         install_dir="/usr/local/bin"
     else
@@ -285,45 +263,26 @@ main() {
     fi
 
     if [ "$ZENITH_YES" = "no" ] && [ -t 0 ]; then
-        printf 'Install %s to %s? [y/N] ' "$ZENITH_BIN" "$install_dir" >&2
+        printf 'Install to %s? [y/N] ' "$install_dir" >&2
         read -r answer || true
         case "${answer:-}" in
-            y|Y|yes|YES)
-                ;;
-            *)
-                err "aborted"
-                exit 1
-                ;;
+            y|Y|yes|YES) ;;
+            *) err "aborted"; exit 1 ;;
         esac
     fi
 
     ensure mkdir -p "$install_dir"
-    local dest
-    dest="$install_dir/$ZENITH_BIN"
-
-    if [ -f "$dest" ]; then
-        say "existing installation detected at: $dest"
-    elif check_cmd "$ZENITH_BIN"; then
-        local existing_cmd
-        existing_cmd="$(command -v "$ZENITH_BIN")"
-        say "existing $ZENITH_BIN found in PATH at: $existing_cmd"
-    fi
+    local dest="$install_dir/$ZENITH_BIN"
 
     if [ -w "$install_dir" ]; then
         ensure cp "$source_bin" "$dest"
         ensure chmod +x "$dest"
     else
-        if check_cmd sudo; then
-            ensure sudo cp "$source_bin" "$dest"
-            ensure sudo chmod +x "$dest"
-        else
-            err "no write access to $install_dir and sudo not available"
-            exit 1
-        fi
+        ensure sudo cp "$source_bin" "$dest"
+        ensure sudo chmod +x "$dest"
     fi
 
     say "installed: $dest"
-    say "run: $ZENITH_BIN --help"
 }
 
 main "$@"
