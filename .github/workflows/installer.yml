@@ -1,4 +1,4 @@
-name: Publish Installer (GitHub Pages)
+name: Installer
 
 on:
   push:
