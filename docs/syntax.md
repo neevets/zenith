@@ -1,4 +1,4 @@
-# Zenith: Advanced Language Specification
+# Advanced Language Specification
 
 This document provides a deep dive into the Zenith syntax, language semantics, and advanced compiler features.
 
