@@ -9,7 +9,7 @@ is_zsh() {
     [ -n "${ZSH_VERSION-}" ]
 }
 
-set -u
+set -eu
 
 ZENITH_REPO="${ZENITH_REPO:-neevets/zenith}"
 ZENITH_BIN="${ZENITH_BIN:-zenith}"

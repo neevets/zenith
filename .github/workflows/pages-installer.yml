@@ -40,6 +40,7 @@ jobs:
             </head>
             <body>
               <h1>Zenith Installer</h1>
+              <p>Auto-detect OS and architecture, then install the latest release.</p>
               <pre>curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y</pre>
               <pre>wget -qO- https://neevets.github.io/zenith/install.sh | sh -s -- -y</pre>
             </body>
