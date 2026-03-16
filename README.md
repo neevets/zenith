@@ -57,7 +57,7 @@
 
 # Installation
 
-## Quick Install (auto-detects OS/arch)
+## Quick Install
 
 ```bash
 # Linux/MacOS
