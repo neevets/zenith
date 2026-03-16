@@ -1,7 +1,9 @@
-use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind};
+use crate::core::ast::{
+    BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind,
+};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use regex::Regex;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LifeCycleMap {
@@ -23,7 +25,21 @@ pub struct Analyzer {
 impl Analyzer {
     pub fn new() -> Self {
         let mut symbols = std::collections::HashSet::new();
-        for builtin in &["db", "file", "ctx", "env", "println", "print", "json", "panic", "z_assert", "assertTrue", "true", "false", "null"] {
+        for builtin in &[
+            "db",
+            "file",
+            "ctx",
+            "env",
+            "println",
+            "print",
+            "json",
+            "panic",
+            "z_assert",
+            "assertTrue",
+            "true",
+            "false",
+            "null",
+        ] {
             symbols.insert(builtin.to_string());
             symbols.insert(format!("${}", builtin));
         }
@@ -44,9 +60,13 @@ impl Analyzer {
         self.collect_definitions(program);
         self.traverse_program(program);
         let type_errors = self.type_checker.check(program);
-        
+
         for err in type_errors {
-            let msg = if program.is_strict { format!("[Strict] {}", err) } else { format!("Warning: {}", err) };
+            let msg = if program.is_strict {
+                format!("[Strict] {}", err)
+            } else {
+                format!("Warning: {}", err)
+            };
             self.lc_map.errors.push(msg);
         }
 
@@ -64,9 +84,15 @@ impl Analyzer {
     fn collect_definitions(&mut self, program: &Program) {
         for stmt in &program.statements {
             match &stmt.kind {
-                StatementKind::FunctionDefinition { name, .. } => { self.symbols.insert(name.clone()); }
-                StatementKind::Enum { name, .. } => { self.symbols.insert(name.clone()); }
-                StatementKind::Struct { name, .. } => { self.symbols.insert(name.clone()); }
+                StatementKind::FunctionDefinition { name, .. } => {
+                    self.symbols.insert(name.clone());
+                }
+                StatementKind::Enum { name, .. } => {
+                    self.symbols.insert(name.clone());
+                }
+                StatementKind::Struct { name, .. } => {
+                    self.symbols.insert(name.clone());
+                }
                 _ => {}
             }
         }
@@ -92,10 +118,16 @@ impl Analyzer {
             }
             StatementKind::Expression(expr) => self.analyze_expression(expr, index),
             StatementKind::Return(expr) => self.analyze_expression(expr, index),
-            StatementKind::If { condition, consequence, alternative } => {
+            StatementKind::If {
+                condition,
+                consequence,
+                alternative,
+            } => {
                 self.analyze_expression(condition, index);
                 self.analyze_block(consequence, index);
-                if let Some(alt) = alternative { self.analyze_block(alt, index); }
+                if let Some(alt) = alternative {
+                    self.analyze_block(alt, index);
+                }
             }
             StatementKind::While { condition, body } => {
                 self.in_loop = true;
@@ -103,24 +135,38 @@ impl Analyzer {
                 self.analyze_block(body, index);
                 self.in_loop = false;
             }
-            StatementKind::For { variable, iterable, body } => {
+            StatementKind::For {
+                variable,
+                iterable,
+                body,
+            } => {
                 self.in_loop = true;
                 self.analyze_expression(iterable, index);
                 self.symbols.insert(variable.clone());
                 self.analyze_block(body, index);
                 self.in_loop = false;
             }
-            StatementKind::FunctionDefinition { parameters, body, .. } => {
-                for param in parameters { self.symbols.insert(param.name.clone()); }
+            StatementKind::FunctionDefinition {
+                parameters, body, ..
+            } => {
+                for param in parameters {
+                    self.symbols.insert(param.name.clone());
+                }
                 self.analyze_block(body, index);
             }
-            StatementKind::TryCatch { try_block, catch_clauses, finally_block } => {
+            StatementKind::TryCatch {
+                try_block,
+                catch_clauses,
+                finally_block,
+            } => {
                 self.analyze_block(try_block, index);
                 for clause in catch_clauses {
                     self.symbols.insert(clause.variable.clone());
                     self.analyze_block(&clause.body, index);
                 }
-                if let Some(finally) = finally_block { self.analyze_block(finally, index); }
+                if let Some(finally) = finally_block {
+                    self.analyze_block(finally, index);
+                }
             }
             StatementKind::Test { body, .. } | StatementKind::Route { body, .. } => {
                 self.analyze_block(body, index);
@@ -139,29 +185,48 @@ impl Analyzer {
         match &expr.kind {
             ExpressionKind::Identifier(name) => {
                 if !self.symbols.contains(name) && !name.contains('.') && !name.contains('\\') {
-                    self.lc_map.errors.push(format!("Undefined symbol: {}", name));
+                    self.lc_map
+                        .errors
+                        .push(format!("Undefined symbol: {}", name));
                 }
             }
-            ExpressionKind::Variable(name) => { 
+            ExpressionKind::Variable(name) => {
                 if !self.symbols.contains(name) {
-                    self.lc_map.errors.push(format!("Undefined variable: {}", name));
+                    self.lc_map
+                        .errors
+                        .push(format!("Undefined variable: {}", name));
                 }
-                self.last_uses.insert(name.clone(), index); 
+                self.last_uses.insert(name.clone(), index);
             }
-            ExpressionKind::CallExpression { function, arguments } => {
+            ExpressionKind::CallExpression {
+                function,
+                arguments,
+            } => {
                 self.analyze_expression(function, index);
-                for arg in arguments { self.analyze_expression(arg, index); }
+                for arg in arguments {
+                    self.analyze_expression(arg, index);
+                }
             }
-            ExpressionKind::MethodCallExpression { object, arguments, .. } => {
+            ExpressionKind::MethodCallExpression {
+                object, arguments, ..
+            } => {
                 self.analyze_expression(object, index);
-                for arg in arguments { self.analyze_expression(arg, index); }
+                for arg in arguments {
+                    self.analyze_expression(arg, index);
+                }
             }
             ExpressionKind::InfixExpression { left, right, .. } => {
                 self.analyze_expression(left, index);
                 self.analyze_expression(right, index);
             }
-            ExpressionKind::PrefixExpression { right, .. } => { self.analyze_expression(right, index); }
-            ExpressionKind::ArrayLiteral(els) => { for el in els { self.analyze_expression(el, index); } }
+            ExpressionKind::PrefixExpression { right, .. } => {
+                self.analyze_expression(right, index);
+            }
+            ExpressionKind::ArrayLiteral(els) => {
+                for el in els {
+                    self.analyze_expression(el, index);
+                }
+            }
             _ => {}
         }
     }
@@ -175,16 +240,36 @@ impl Analyzer {
 
     fn check_expression_security(&mut self, expr: &Expression) {
         match &expr.kind {
-            ExpressionKind::CallExpression { function, arguments } => {
+            ExpressionKind::CallExpression {
+                function,
+                arguments,
+            } => {
                 if let ExpressionKind::Identifier(name) = &function.kind {
-                    let unsafe_funcs = ["shell_exec", "system", "passthru", "exec", "popen", "proc_open"];
+                    let unsafe_funcs = [
+                        "shell_exec",
+                        "system",
+                        "passthru",
+                        "exec",
+                        "popen",
+                        "proc_open",
+                    ];
                     if unsafe_funcs.contains(&name.as_str()) {
-                        self.lc_map.errors.push(format!("[Quantum Shield] Unsafe execution blocked: {} is restricted.", name));
+                        self.lc_map.errors.push(format!(
+                            "[Quantum Shield] Unsafe execution blocked: {} is restricted.",
+                            name
+                        ));
                     }
                 }
-                for arg in arguments { self.check_expression_security(arg); }
+                for arg in arguments {
+                    self.check_expression_security(arg);
+                }
             }
-            ExpressionKind::MethodCallExpression { object, method, arguments, .. } => {
+            ExpressionKind::MethodCallExpression {
+                object,
+                method,
+                arguments,
+                ..
+            } => {
                 if let ExpressionKind::Identifier(name) = &object.kind {
                     if name == "db" && (method == "query" || method == "execute") {
                         for arg in arguments {
@@ -193,19 +278,32 @@ impl Analyzer {
                             }
                         }
                     }
-                    if name == "file" && (method == "read" || method == "write" || method == "append" || method == "delete") {
+                    if name == "file"
+                        && (method == "read"
+                            || method == "write"
+                            || method == "append"
+                            || method == "delete")
+                    {
                         for arg in arguments {
                             if self.is_suspicious_path(arg) {
-                                self.lc_map.errors.push(format!("[Quantum Shield] Path Traversal detected in {}.", method));
+                                self.lc_map.errors.push(format!(
+                                    "[Quantum Shield] Path Traversal detected in {}.",
+                                    method
+                                ));
                             }
                         }
                     }
                 }
-                for arg in arguments { self.check_expression_security(arg); }
+                for arg in arguments {
+                    self.check_expression_security(arg);
+                }
             }
             ExpressionKind::SqlQueryExpression { query, .. } => {
                 if self.re_sql_hard.is_match(query) {
-                    self.lc_map.errors.push("[Quantum Shield] Forbidden SQL operation: DROP/TRUNCATE/ALTER blocked.".into());
+                    self.lc_map.errors.push(
+                        "[Quantum Shield] Forbidden SQL operation: DROP/TRUNCATE/ALTER blocked."
+                            .into(),
+                    );
                 }
                 if query.contains(" + ") || query.contains(" . ") || query.contains("$$") {
                     self.lc_map.errors.push("[Quantum Shield] Possible SQL Injection: Dynamic construction in query block.".into());
@@ -238,18 +336,27 @@ pub struct TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        TypeChecker { symbol_table: HashMap::new() }
+        TypeChecker {
+            symbol_table: HashMap::new(),
+        }
     }
 
     pub fn check(&mut self, program: &Program) -> Vec<String> {
         let mut errors = Vec::new();
         for stmt in &program.statements {
             match &stmt.kind {
-                StatementKind::Let { name, value, var_type } => {
+                StatementKind::Let {
+                    name,
+                    value,
+                    var_type,
+                } => {
                     let val_type = self.infer_type(value);
                     if let Some(expected) = var_type {
                         if expected != &val_type && expected != "any" && val_type != "any" {
-                            errors.push(format!("Type mismatch: cannot assign {} to {} {}", val_type, expected, name));
+                            errors.push(format!(
+                                "Type mismatch: cannot assign {} to {} {}",
+                                val_type, expected, name
+                            ));
                         }
                     }
                     self.symbol_table.insert(name.clone(), val_type);
@@ -265,7 +372,9 @@ impl TypeChecker {
             ExpressionKind::IntegerLiteral(_) => "int".into(),
             ExpressionKind::FloatLiteral(_) => "float".into(),
             ExpressionKind::StringLiteral { .. } => "string".into(),
-            ExpressionKind::Variable(name) => self.symbol_table.get(name).cloned().unwrap_or("any".into()),
+            ExpressionKind::Variable(name) => {
+                self.symbol_table.get(name).cloned().unwrap_or("any".into())
+            }
             _ => "any".into(),
         }
     }

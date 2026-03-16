@@ -57,11 +57,13 @@
 
 # Installation
 
-## Quick Install (Linux & macOS)
+## Quick Install (auto-detects OS/arch)
 
 ```bash
-curl -fsS https://dl.zenlang.xyz/install.sh | sh
+curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y
 ```
+
+See full installer usage in [docs/installation.md](docs/installation.md).
 
 ## Build from Source
 
@@ -83,6 +85,7 @@ sudo mv target/release/zenith /usr/local/bin/
 - [Functional Programming](docs/functional.md)
 - [Modern PHP Features](docs/modern_php.md)
 - [Architecture & Security](docs/architecture.md)
+- [Installation](docs/installation.md)
 
 ---
 

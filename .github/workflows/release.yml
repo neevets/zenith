@@ -50,13 +50,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target_name: zenith-linux-amd64
+            target_name: zenith-linux-x86_64
+            bin: zenith
+          - os: macos-13
+            target_name: zenith-macos-x86_64
             bin: zenith
           - os: macos-latest
             target_name: zenith-macos-arm64
             bin: zenith
           - os: windows-latest
-            target_name: zenith-windows-amd64
+            target_name: zenith-windows-x86_64
             bin: zenith.exe
     steps:
       - name: Checkout

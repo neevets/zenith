@@ -105,7 +105,6 @@ impl Engine {
             ));
         }
 
-
         for import_stmt in &program.imports {
             if let StatementKind::Import(path) = &import_stmt.kind {
                 if path.starts_with("http") && !module_map.contains_key(path) {
@@ -127,7 +126,10 @@ impl Engine {
         if let Some(ref c) = cm {
             let runtime_path = c.save_runtime(&header)?;
             php_code.push_str("<?php\n\ndeclare(strict_types=1);\n\n");
-            php_code.push_str(&format!("require_once '{}';\n", runtime_path.to_string_lossy()));
+            php_code.push_str(&format!(
+                "require_once '{}';\n",
+                runtime_path.to_string_lossy()
+            ));
         } else {
             php_code.push_str(&header);
         }

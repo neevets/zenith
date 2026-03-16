@@ -44,7 +44,6 @@ impl Diagnostic {
             DiagnosticLevel::Note => "note".blue().bold(),
         };
 
-        
         let mut line_num = 1;
         let mut col_num = 1;
         let mut line_start = 0;
@@ -70,7 +69,6 @@ impl Diagnostic {
         );
         println!("   {}", "|".blue().bold());
 
-        
         let line_end = source[line_start..]
             .find('\n')
             .map(|n| line_start + n)
