@@ -6,6 +6,10 @@
   <a href="https://zenith-lang.org">Zenith</a>
 </h1>
 
+<p>
+  <img src="https://github.com/neevets/zenith/actions/workflows/tests.yml/badge.svg" alt="Zenith Tests">
+</p>
+
 </div>
 
 # Table of Contents
