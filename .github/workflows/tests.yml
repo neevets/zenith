@@ -1,4 +1,4 @@
-name: Zenith CI
+name: Zenith Tests
 
 on:
   push:
