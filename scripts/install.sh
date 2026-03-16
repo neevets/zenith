@@ -16,7 +16,14 @@ ZENITH_BIN="${ZENITH_BIN:-zenith}"
 ZENITH_QUIET=no
 ZENITH_YES=no
 ZENITH_INSTALL_DIR="${ZENITH_INSTALL_DIR:-}"
+ZENITH_TMP_DIR=""
 RETVAL=""
+
+cleanup_tmp_dir() {
+    if [ -n "${ZENITH_TMP_DIR:-}" ] && [ -d "$ZENITH_TMP_DIR" ]; then
+        rm -rf "$ZENITH_TMP_DIR"
+    fi
+}
 
 usage() {
     cat <<USAGE
@@ -228,9 +235,8 @@ main() {
         candidates="zenith-macos-${arch}.tar.gz zenith-macos-arm64.tar.gz"
     fi
 
-    local tmp
-    tmp="$(mktemp -d)"
-    trap 'rm -rf "$tmp"' EXIT INT TERM
+    ZENITH_TMP_DIR="$(mktemp -d)"
+    trap 'cleanup_tmp_dir' EXIT INT TERM
 
     local selected
     selected=""
@@ -238,7 +244,7 @@ main() {
     for artifact in $candidates; do
         local url
         url="https://github.com/${ZENITH_REPO}/releases/latest/download/${artifact}"
-        if downloader "$url" "$tmp/zenith.tar.gz" "$target" >/dev/null 2>&1; then
+        if downloader "$url" "$ZENITH_TMP_DIR/zenith.tar.gz" "$target" >/dev/null 2>&1; then
             selected="$artifact"
             break
         fi
@@ -253,13 +259,13 @@ main() {
     final_url="https://github.com/${ZENITH_REPO}/releases/latest/download/${selected}"
     say "target: $target"
     say "downloading: $final_url"
-    ensure downloader "$final_url" "$tmp/zenith.tar.gz" "$target"
-    ensure tar -xzf "$tmp/zenith.tar.gz" -C "$tmp"
+    ensure downloader "$final_url" "$ZENITH_TMP_DIR/zenith.tar.gz" "$target"
+    ensure tar -xzf "$ZENITH_TMP_DIR/zenith.tar.gz" -C "$ZENITH_TMP_DIR"
 
     local source_bin
-    source_bin="$tmp/$binary_file"
+    source_bin="$ZENITH_TMP_DIR/$binary_file"
     if [ ! -f "$source_bin" ]; then
-        source_bin="$(find "$tmp" -type f \( -name "zenith" -o -name "zenith.exe" \) | head -n 1)"
+        source_bin="$(find "$ZENITH_TMP_DIR" -type f \( -name "zenith" -o -name "zenith.exe" \) | head -n 1)"
     fi
 
     if [ -z "$source_bin" ] || [ ! -f "$source_bin" ]; then
@@ -294,6 +300,14 @@ main() {
     ensure mkdir -p "$install_dir"
     local dest
     dest="$install_dir/$ZENITH_BIN"
+
+    if [ -f "$dest" ]; then
+        say "existing installation detected at: $dest"
+    elif check_cmd "$ZENITH_BIN"; then
+        local existing_cmd
+        existing_cmd="$(command -v "$ZENITH_BIN")"
+        say "existing $ZENITH_BIN found in PATH at: $existing_cmd"
+    fi
 
     if [ -w "$install_dir" ]; then
         ensure cp "$source_bin" "$dest"
