@@ -1,0 +1,21 @@
+struct Node {
+    $id: int;
+    $val: int;
+}
+
+function stress($count: int): int {
+    let $list = native.fill($count, null);
+    let $i = 0;
+    while ($i < $count) {
+        $list[$i] = Node { id: $i, val: $i * 2 };
+        $i = $i + 1;
+    }
+    return native.count($list);
+}
+
+let $start = native.microtime(true);
+let $res = stress(100000);
+let $end = native.microtime(true);
+
+println("Zenith Struct Stress(100k) Result: ", $res);
+println("Zenith Struct Stress(100k) Time: ", $end - $start, "s");

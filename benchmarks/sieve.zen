@@ -1,13 +1,6 @@
 function sieve($n: int): int {
     let $count = 0;
-    let $primes = [true]; // Simplified initialization
-    // Zenith doesn't have a built-in 'fill' for large arrays yet, 
-    // so we'll do a simple loop for the sake of the benchmark.
-    let $i = 0;
-    while ($i <= $n) {
-        $primes[$i] = true;
-        $i = $i + 1;
-    }
+    let $primes = native.fill($n + 1, true);
 
     let $p = 2;
     while ($p * $p <= $n) {

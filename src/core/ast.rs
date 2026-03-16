@@ -175,6 +175,11 @@ pub enum StatementKind {
         path: String,
         body: BlockStatement,
     },
+    TryCatch {
+        try_block: BlockStatement,
+        catch_variable: Option<String>,
+        catch_block: BlockStatement,
+    },
     Middleware(BlockStatement),
 }
 

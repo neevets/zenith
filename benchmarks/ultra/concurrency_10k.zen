@@ -1,0 +1,31 @@
+function task($id: int): int {
+    yield $id;
+    return $id * 2;
+}
+
+function storm($count: int): int {
+    let $fibers = native.fill($count, null);
+    let $i = 0;
+    while ($i < $count) {
+        let $f = spawn task; // pass the function, not a call
+        $f.start($i);
+        $fibers[$i] = $f;
+        $i = $i + 1;
+    }
+    let $sum = 0;
+    let $j = 0;
+    while ($j < $count) {
+        let $f = $fibers[$j];
+        $f.resume();
+        $sum = $sum + $f.getReturn();
+        $j = $j + 1;
+    }
+    return $sum;
+}
+
+let $start = native.microtime(true);
+let $res = storm(10000);
+let $end = native.microtime(true);
+
+println("Zenith Fibers(10k) Result: ", $res);
+println("Zenith Fibers(10k) Time: ", $end - $start, "s");

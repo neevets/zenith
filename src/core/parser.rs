@@ -129,6 +129,7 @@ impl<'a> Parser<'a> {
             TokenType::Import => Some(self.parse_import_statement()),
             TokenType::Struct => Some(self.parse_struct_definition()),
             TokenType::Route => Some(self.parse_route_statement()),
+            TokenType::Try => Some(self.parse_try_statement()),
             TokenType::At => {
                 self.next_token();
                 if self.cur_token.literal == "memoize" {
@@ -1032,6 +1033,39 @@ impl<'a> Parser<'a> {
             attributes: Vec::new(),
             kind: StatementKind::For { variable, iterable, body: body.clone() },
             span: start_span.start..body.span.end,
+        }
+    }
+
+    fn parse_try_statement(&mut self) -> Statement {
+        let start_span = self.cur_token.span.clone();
+        
+        self.expect_peek(TokenType::LBrace);
+        let try_block = self.parse_block_statement();
+        
+        let mut catch_variable = None;
+        let mut catch_block = BlockStatement { statements: vec![], span: try_block.span.clone() };
+
+        if self.peek_token_is(TokenType::Catch) {
+            self.next_token();
+            if self.peek_token_is(TokenType::LParen) {
+                self.next_token();
+                self.expect_peek(TokenType::Var);
+                catch_variable = Some(self.cur_token.literal.clone());
+                self.expect_peek(TokenType::RParen);
+            }
+            self.expect_peek(TokenType::LBrace);
+            catch_block = self.parse_block_statement();
+        }
+
+        let end = catch_block.span.end;
+        Statement {
+            attributes: Vec::new(),
+            kind: StatementKind::TryCatch {
+                try_block,
+                catch_variable,
+                catch_block,
+            },
+            span: start_span.start..end,
         }
     }
 

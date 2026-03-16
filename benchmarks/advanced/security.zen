@@ -1,0 +1,17 @@
+function benchmark_security($path: string): string {
+    // Zenith's 'file.read' is automatically guarded by Quantum Shield
+    let $res = "BLOCKED";
+    try {
+        $res = file.read($path);
+    } catch {
+        $res = "BLOCKED";
+    }
+    return $res;
+}
+
+let $start = native.microtime(true);
+let $res = benchmark_security("../../../etc/passwd");
+let $end = native.microtime(true);
+
+println("Zenith Security Protection: ", $res);
+println("Zenith Security check overhead: ", ($end - $start) * 1000, "ms");

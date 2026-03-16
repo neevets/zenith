@@ -13,6 +13,7 @@ pub struct Transpiler {
     pub current_memo_cache: Option<String>,
     pub current_memo_key: Option<String>,
     pub current_used_vars: std::collections::HashSet<String>,
+    pub middleware_block: Option<String>,
 }
 
 impl Transpiler {
@@ -28,6 +29,7 @@ impl Transpiler {
             current_memo_cache: None,
             current_memo_key: None,
             current_used_vars: std::collections::HashSet::new(),
+            middleware_block: None,
         }
     }
 
@@ -103,6 +105,17 @@ impl Transpiler {
             }
             StatementKind::Return(expr) => format!("return {};", self.transpile_expression(expr)),
             StatementKind::Expression(expr) => {
+                if let ExpressionKind::CallExpression { function, arguments } = &expr.kind {
+                    if let ExpressionKind::Identifier(name) = &function.as_ref().kind {
+                        if name == "println" {
+                            let args: Vec<String> = arguments.iter().map(|arg| self.transpile_expression(arg)).collect();
+                            return format!("echo {}, PHP_EOL;\n", args.join(", "));
+                        } else if name == "print" {
+                            let args: Vec<String> = arguments.iter().map(|arg| self.transpile_expression(arg)).collect();
+                            return format!("echo {};\n", args.join(", "));
+                        }
+                    }
+                }
                 let s = self.transpile_expression(expr);
                 if s.is_empty() { "".into() } else { format!("{};", s) }
             }
@@ -168,6 +181,24 @@ impl Transpiler {
                 out.push_str("}\n");
                 out
             }
+            StatementKind::TryCatch { try_block, catch_variable, catch_block } => {
+                let mut out = format!("try {{\n");
+                out.push_str(&self.transpile_block(try_block));
+                let var = if let Some(v) = catch_variable {
+                    if v.starts_with('$') { v.clone() } else { format!("${}", v) }
+                } else {
+                    "$e".to_string()
+                };
+                out.push_str(&format!("}} catch (Throwable {}) {{\n", var));
+                out.push_str(&self.transpile_block(catch_block));
+                out.push_str("}");
+                out
+            }
+            StatementKind::Middleware(body) => {
+                let block = self.transpile_block(body);
+                self.middleware_block = Some(block);
+                "".into()
+            }
         };
 
         if !prefix.is_empty() {
@@ -195,10 +226,10 @@ impl Transpiler {
             ExpressionKind::Identifier(name) => {
                 if name == "print" { "ZenithRuntime::print".into() }
                 else if name == "println" { "ZenithRuntime::println".into() }
-                else if name == "db" { "$db".into() }
-                else if name == "file" { "$file".into() }
-                else if name == "ctx" { "$ctx".into() }
-                else if name == "env" { "$env".into() }
+                else if name == "db" { self.current_used_vars.insert("db".into()); "$db".into() }
+                else if name == "file" { self.current_used_vars.insert("file".into()); "$file".into() }
+                else if name == "ctx" { self.current_used_vars.insert("ctx".into()); "$ctx".into() }
+                else if name == "env" { self.current_used_vars.insert("env".into()); "$env".into() }
                 else if name == "json" { "json".into() }
                 else { name.clone() }
             }
@@ -249,7 +280,14 @@ impl Transpiler {
                     }
                     _ => operator,
                 };
-                format!("({} {} {})", self.transpile_expression(left), op, self.transpile_expression(right))
+                let left_s = self.transpile_expression(left);
+                let right_s = self.transpile_expression(right);
+                
+                if operator == "+" || operator == "-" || operator == "*" || operator == "/" {
+                    format!("{} {} {}", left_s, op, right_s)
+                } else {
+                    format!("({} {} {})", left_s, op, right_s)
+                }
             }
             ExpressionKind::IndexExpression { left, index } => {
                 format!("{}[{}]", self.transpile_expression(left), self.transpile_expression(index))
@@ -263,8 +301,23 @@ impl Transpiler {
                 let obj = self.transpile_expression(object);
                 let args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
                 if obj == "native" {
+                    if method == "microtime" {
+                        return format!("microtime({})", args.join(", "));
+                    } else if method == "fill" {
+                        return format!("array_fill(0, {}, {})", args[0], args[1]);
+                    } else if method == "range" {
+                        return format!("range({}, {})", args[0], args[1]);
+                    } else if method == "count" {
+                        return format!("count({})", args[0]);
+                    }
                     return format!("ZenithRuntime::{}({})", method, args.join(", "));
                 }
+                
+                // Fiber special handling for .start(...)
+                if method == "start" && !args.is_empty() {
+                    return format!("{}->start({})", obj, args.join(", "));
+                }
+
                 let is_static = obj.chars().next().map_or(false, |c| c.is_uppercase());
                 let op = if is_static { "::" } else if *is_nullsafe { "?->" } else { "->" };
                 format!("{}{}{}({})", obj, op, method, args.join(", "))
@@ -302,7 +355,18 @@ impl Transpiler {
                 format!("({} ?? {})", self.transpile_expression(left), self.transpile_expression(right))
             }
             ExpressionKind::SpawnExpression { body } => {
-                format!("new Fiber(function() {{\n{}}})", self.transpile_statement(body))
+                match &body.kind {
+                    StatementKind::Expression(Expression { kind: ExpressionKind::CallExpression { function, arguments }, .. }) => {
+                        let func_s = self.transpile_expression(function);
+                        let args: Vec<String> = arguments.iter().map(|arg| self.transpile_expression(arg)).collect();
+                        format!("new Fiber(function() use ($file, $db, $ctx, $env) {{ {}({}); }})", func_s, args.join(", "))
+                    }
+                    StatementKind::Expression(Expression { kind: ExpressionKind::Identifier(name), .. }) => {
+                        let func_s = self.transpile_expression(&Expression { kind: ExpressionKind::Identifier(name.clone()), span: body.span.clone() });
+                        format!("new Fiber({})", func_s)
+                    }
+                    _ => format!("new Fiber(function() use ($file, $db, $ctx, $env) {{\n{}}})", self.transpile_statement(body))
+                }
             }
             ExpressionKind::AssignExpression { left, value } => {
                 format!("{} = {}", self.transpile_expression(left), self.transpile_expression(value))
@@ -344,24 +408,37 @@ impl Transpiler {
         }
     }
 
-    fn transpile_function(&mut self, name: &str, parameters: &[Parameter], body: &BlockStatement, is_render: bool, is_memoized: bool) -> String {
-        let mut out: String = if is_render { "function ".into() } else { "function ".into() };
+    fn transpile_function(&mut self, name: &str, parameters: &[Parameter], body: &BlockStatement, _is_render: bool, is_memoized: bool) -> String {
+        self.current_used_vars.clear();
+        let body_out = self.transpile_block(body);
+        
+        let mut out = String::from("function ");
         out.push_str(name);
+        
         let params: Vec<String> = parameters.iter().map(|p| {
             let t = self.map_type(p.param_type.as_deref());
             format!("{}{}", if t.is_empty() { "".into() } else { format!("{} ", t) }, p.name)
         }).collect();
         out.push_str(&format!("({}) {{\n", params.join(", ")));
-        out.push_str("    global $file, $db, $ctx;\n");
+        
+        let mut globals = Vec::new();
+        if self.current_used_vars.contains("file") { globals.push("$file"); }
+        if self.current_used_vars.contains("db") { globals.push("$db"); }
+        if self.current_used_vars.contains("ctx") { globals.push("$ctx"); }
+        if self.current_used_vars.contains("env") { globals.push("$env"); }
+        
+        if !globals.is_empty() {
+            out.push_str(&format!("    global {};\n", globals.join(", ")));
+        }
+
         if is_memoized {
-            out.push_str(&format!("    static $memo_cache = [];\n"));
+            out.push_str("    static $memo_cache = [];\n");
             let keys: Vec<String> = parameters.iter().map(|p| p.name.clone()).collect();
             out.push_str(&format!("    $memo_key = md5(json_encode([{}]));\n", keys.join(", ")));
             out.push_str("    if (isset($memo_cache[$memo_key])) return $memo_cache[$memo_key];\n");
         }
-        out.push_str(&self.transpile_block(body));
-        if is_memoized {
-        }
+        
+        out.push_str(&body_out);
         out.push_str("}");
         out
     }
@@ -443,6 +520,8 @@ impl Transpiler {
         out.push_str("    public static function print(...$args) { foreach ($args as $arg) echo self::toString($arg); }\n");
         out.push_str("    public static function println(...$args) { foreach ($args as $arg) echo self::toString($arg); echo PHP_EOL; }\n");
         out.push_str("    public static function microtime($get_as_float = false) { return microtime($get_as_float); }\n");
+        out.push_str("    public static function fill($n, $v) { return array_fill(0, $n, $v); }\n");
+        out.push_str("    public static function range($s, $e) { return range($s, $e); }\n");
         out.push_str("    public static function sanitize($v, $type) {\n");
         out.push_str("        if ($type === 'html') return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');\n");
         out.push_str("        return $v;\n");

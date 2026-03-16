@@ -1,0 +1,25 @@
+@memoize
+function fib_memo($n: int): int {
+    if ($n < 2) { return $n; }
+    return fib_memo($n - 1) + fib_memo($n - 2);
+}
+
+function fib($n: int): int {
+    if ($n < 2) { return $n; }
+    return fib($n - 1) + fib($n - 2);
+}
+
+// Test Memoized (should be instant even for 40)
+let $start_memo = native.microtime(true);
+let $res_memo = fib_memo(40);
+let $end_memo = native.microtime(true);
+
+// Test Recursive (only 30 to avoid hanging)
+let $start_rec = native.microtime(true);
+let $res_rec = fib(30);
+let $end_rec = native.microtime(true);
+
+println("Zenith Fib-Memo(40) Result: ", $res_memo);
+println("Zenith Fib-Memo(40) Time: ", $end_memo - $start_memo, "s");
+println("Zenith Fib-Rec(30) Result: ", $res_rec);
+println("Zenith Fib-Rec(30) Time: ", $end_rec - $start_rec, "s");

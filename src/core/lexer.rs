@@ -59,6 +59,10 @@ pub enum TokenType {
     Test,
     #[token("struct")]
     Struct,
+    #[token("try")]
+    Try,
+    #[token("catch")]
+    Catch,
 
     #[token("int")]
     IntType,
