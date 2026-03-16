@@ -1,148 +1,116 @@
-# Referencia de Sintaxis de Zenith
+# Zenith: Advanced Language Specification
 
-Zenith es un lenguaje moderno, tipado y seguro que transpila a PHP 8.1+. Esta página contiene la guía completa de su sintaxis.
+This document provides a deep dive into the Zenith syntax, language semantics, and advanced compiler features.
 
-## Comentarios
+## 1. Compiler Directives & Strict Mode
+Zenith supports file-level directives to control the behavior of the `Quantum Shield` analyzer.
+
+### `#!strict`
+The `#![strict]` directive converts semantic warnings into fatal compilation errors. 
+- **Undefined Symbols**: Any variable, function, or struct access not present in the symbol table will stop the build.
+- **Strict Typing**: Type mismatches in assignments or function returns become fatal.
+
 ```zenith
-// Comentario de una sola línea
-/* Comentario 
-   multilínea */
+#![strict]
+let $x: int = "string"; // Fatal error in strict mode
 ```
 
-## Variables y Tipos
-Las variables siempre comienzan con `$` (siguiendo la herencia de PHP) y se declaran con `let`.
+## 2. Advanced Functional Paradigm
 
+### Constant Folding (Compile-Time Evaluation)
+The Zenith transpiler automatically evaluates constant expressions during the code generation phase.
 ```zenith
-let $nombre = "Zenith";            // string (inferido)
-let $version: float = 1.0;         // float (explícito)
-let $activado: bool = true;        // bool
-let $contador: int = 42;           // int
-let $lista = [1, 2, 3];            // array
+let $x = 10 + 20 * 2; // Transpiles directly to $x = 50;
+let $s = "Hello " + "World"; // Transpiles to $s = "Hello World";
 ```
 
-## Cadenas de Texto e Interpolación
-Zenith usa llaves `{}` para interpolar variables directamente en cadenas con comillas dobles.
-
+### Pipe Operator (`|>`) & Placeholders
+The pipe operator chains expressions by injecting the left-hand value as the first argument of the right-hand call.
 ```zenith
-let $usuario = "Alice";
-println("Hola, { $usuario }!"); // Imprime: Hola, Alice!
+$data |> process() |> format("json") |> println();
 ```
 
-## Operador Pipe (`|>`)
-Permite encadenar funciones de forma legible, pasando el resultado de la izquierda como primer argumento a la función de la derecha.
-
+### Modern Closures
+Short closure syntax provides concise lambda definitions with implicit scope capture.
 ```zenith
-"  hola mundo  " 
-    |> trim() 
-    |> strtoupper() 
-    |> println(); // Imprime: HOLA MUNDO
+let $multiplier = ($n) => $n * 10;
+let $typed_closure = ($x: int): int => $x ** 2;
 ```
 
-## Estructuras de Control
-
-### If / Else
+### Memoization Decorator (`@memoize`)
+Functions can be automatically cached using the `@memoize` attribute. This wraps the function body in a closure and utilizes an internal `static $memo_cache`.
 ```zenith
-if ($puntos > 10) {
-    println("¡Ganaste!");
-} else {
-    println("Sigue intentando");
+@memoize
+function expensive_calc($n) {
+    // Computed only once for each distinct $n
+    return $n * 3.1415;
 }
 ```
 
-### Bucle For
-```zenith
-for ($item in $lista) {
-    println("Elemento: { $item }");
-}
-```
+## 3. First-Class SQL & Data Handling
 
-### Expresión Match
-Es una versión más potente y expresiva que `switch`. Devuelve un valor.
-
+### SQL Query Blocks
+SQL is a first-class citizen in Zenith. Instead of strings, use `query` blocks that are analyzed for security and syntax.
 ```zenith
-let $resultado = match($codigo) {
-    200 => "OK",
-    404 => "No encontrado",
-    500 => "Error de servidor",
-    default => "Código desconocido"
+// Global or local DB connection
+db.connect("mysql:host=localhost;dbname=prod");
+
+let $results = query {
+    SELECT u.id, u.email 
+    FROM users u 
+    WHERE u.status == 'active' 
+    LIMIT 10
 };
 ```
 
-## Funciones
-Se definen con la palabra clave `fn`.
-
+### Sanitization Pipeline (`!>`)
+Standardize security by using the sanitization operator before output.
 ```zenith
-// Función flecha (arrow function)
-let $doble = fn($n: int): int => $n * 2;
-
-// Uso
-println($doble(5)); // 10
+let $input = $_GET["html_content"];
+println($input !> "html"); // Escapes XSS automatically
 ```
 
-## Concurrencia (Fibers)
-Zenith facilita el uso de Fibers de PHP mediante bloques `spawn`.
-
+## 4. Metadata & Attributes
+Zenith supports generic metadata on definitions. These are captured in the AST and can be used by the compiler or external tools.
 ```zenith
-let $proceso = spawn {
-    yield "Paso 1";
-    yield "Paso 2";
-};
-
-println($proceso.resume()); // Imprime el valor de yield
-```
-
-## Ruteo Nativo (Web-First)
-Zenith tiene ruteo integrado en la sintaxis.
-
-```zenith
-route GET "/perfil/{$id}" => {
-    println("Cargando perfil {$id}");
+@Table("products")
+@Serializable
+struct Product {
+    id: int,
+    price: float
 }
 ```
 
-## Bloques de Consulta SQL (First-class SQL)
-El SQL no es un string, es parte del lenguaje.
-
+## 5. Concurrency Model: Fibers & Spawn
+Zenith abstracts PHP 8.1+ Fibers into high-level concurrency blocks.
 ```zenith
-// Conexión nativa
-db.connect("mysql:host=localhost;dbname=test", "root", "");
-
-// Consulta segura
-let $usuarios = query {
-    SELECT name FROM users WHERE id == 1
+let $task = spawn {
+    println("Task started");
+    yield "Paused";
+    println("Task resumed");
 };
+
+$task.resume(); // Output: Task started
 ```
 
-## Tubería de Sanitización (`!>`)
-Operador dedicado a la seguridad web para limpiar datos antes de imprimirlos.
+## 6. Type System & Structs
+Zenith uses a nominal type system with support for composition and inheritance.
 
+### Struct Inheritance
 ```zenith
-let $bio = "<script>alert(1)</script> Hola Zenith!";
-println($bio !> "html"); // Escapa automáticamente el contenido
-```
-
-## Atributos de Comportamiento (`#[...]`)
-Decoradores que gestionan el estado y comportamiento de forma declarativa.
-
-```zenith
-#[Session("user_id")]
-let $uid = 0; // Se inicializa con el valor de la sesión si existe
-```
-
-## Sistema de Archivos
-Acceso seguro mediante permisos.
-
-```zenith
-file.write("notas.txt", "Contenido importante");
-let $texto = file.read("notas.txt");
-```
-
-## Pruebas (Testing)
-El soporte para tests es nativo en el lenguaje.
-
-```zenith
-test "verificar suma" {
-    let $suma = 2 + 2;
-    z_assert($suma == 4, "La suma debe ser 4");
+struct Entity {
+    id: int,
+    created_at: string
 }
+
+struct User : Entity {
+    username: string
+}
+```
+
+## 7. Native Interoperability
+Access native PHP functions or classes using the double-backslash `\\` prefix.
+```zenith
+let $pdo = \\PDO { "sqlite::memory:" };
+let $time = \\time();
 ```

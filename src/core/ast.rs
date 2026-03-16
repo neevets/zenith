@@ -234,5 +234,6 @@ pub struct Program {
     pub imports: Vec<Statement>,
     pub middleware: Option<BlockStatement>,
     pub statements: Vec<Statement>,
+    pub is_strict: bool,
     pub span: Span,
 }

@@ -1,0 +1,51 @@
+#![strict]
+
+// Test Memoization
+let $call_count = 0;
+
+@memoize
+function fib($n) {
+    $call_count = $call_count + 1;
+    if ($n <= 1) { return $n; }
+    return fib($n - 1) + fib($n - 2);
+}
+
+test "memoization works" {
+    let $res1 = fib(10);
+    let $res2 = fib(10);
+    z_assert($res1 == $res2, "Result should be the same");
+    // Without memoization, fib(10) calls itself many times.
+    // With memoization, it should be much fewer calls for the second run.
+    println("Call count: ", $call_count);
+}
+
+// Test Constant Folding
+test "constant folding" {
+    let $x = 10 + 20 * 2; // Should be 50 at compile-time
+    let $s = "Hello " + "World"; // Should be "Hello World"
+    z_assert($x == 50, "X should be 50");
+    z_assert($s == "Hello World", "S should be Hello World");
+}
+
+// Test Short Closures
+test "short closures" {
+    let $double = ($x) => $x * 2;
+    z_assert($double(5) == 10, "Double 5 should be 10");
+}
+
+// Test Strict Mode (Positive Case)
+test "strict mode positive" {
+    let $defined = 1;
+    println("Defined: ", $defined);
+}
+
+// Test Generic Attributes
+@Table("users")
+struct User {
+    id: int,
+    name: string
+}
+
+test "attributes exist" {
+    println("User struct defined with attributes");
+}

@@ -218,12 +218,22 @@ impl Transpiler {
 
     pub fn transpile_block(&mut self, block: &BlockStatement) -> String {
         let mut out = String::new();
+        let mut unreachable = false;
         for stmt in &block.statements {
+            if unreachable { break; }
             let s = self.transpile_statement(stmt);
+            if s.is_empty() { continue; }
             for line in s.lines() {
                 out.push_str("    ");
                 out.push_str(line);
                 out.push('\n');
+            }
+            match &stmt.kind {
+                StatementKind::Return(_) => unreachable = true,
+                _ => {}
+            }
+            if s.contains("throw new") || s.contains("exit(") || s.contains("die(") || s.contains("panic(") {
+                unreachable = true;
             }
         }
         out
@@ -288,9 +298,14 @@ impl Transpiler {
                     }
                     _ => operator,
                 };
-                let left_s = self.transpile_expression(left);
-                let right_s = self.transpile_expression(right);
+                let mut left_s = self.transpile_expression(left);
+                let mut right_s = self.transpile_expression(right);
                 
+                if operator == "+" && left_s.ends_with('"') && right_s.starts_with('"') {
+                    left_s.pop();
+                    return format!("{}\"{}\"", left_s, &right_s[1..]);
+                }
+
                 if operator == "+" || operator == "-" || operator == "*" || operator == "/" {
                     format!("{} {} {}", left_s, op, right_s)
                 } else {
@@ -557,9 +572,22 @@ impl Transpiler {
         out.push_str("$ctx = new stdClass();\n");
         out.push_str("$ctx->path = $_SERVER['REQUEST_URI'] ?? '/';\n");
         out.push_str("$env = (object)$_ENV;\n");
-        out.push_str("$file = new class {\n");
-        out.push_str("    public function write($p, $c) { file_put_contents($p, $c); }\n");
+        out.push_str("$z_created_files = [];\n");
+        out.push_str("$file = new class($z_created_files) {\n");
+        out.push_str("    public function __construct(public &$created) {}\n");
+        out.push_str("    public function write($p, $c) { \n");
+        out.push_str("        $this->created[] = $p;\n");
+        out.push_str("        return file_put_contents($p, $c); \n");
+        out.push_str("    }\n");
         out.push_str("    public function read($p) { return file_get_contents($p); }\n");
+        out.push_str("    public function exists($p) { return file_exists($p); }\n");
+        out.push_str("    public function delete($p) { return unlink($p); }\n");
+        out.push_str("    public function cleanup() {\n");
+        out.push_str("        foreach ($this->created as $f) {\n");
+        out.push_str("            if (file_exists($f)) unlink($f);\n");
+        out.push_str("        }\n");
+        out.push_str("        $this->created = [];\n");
+        out.push_str("    }\n");
         out.push_str("};\n\n");
         out.push_str("class ZenithResult implements \\IteratorAggregate {\n");
         out.push_str("    public function __construct(public array $rows) {}\n");
@@ -590,6 +618,8 @@ impl Transpiler {
             out.push_str("    echo \" [PASS]\\n\"; $passed++;\n");
             out.push_str("} catch (Exception $e) {\n");
             out.push_str("    echo \" [FAIL] \" . $e->getMessage() . \"\\n\";\n");
+            out.push_str("} finally {\n");
+            out.push_str("    $file->cleanup();\n");
             out.push_str("}\n");
             out.push_str("$total++;\n");
         }

@@ -1,4 +1,4 @@
-name: Zenith Release
+name: Release
 
 on:
   push:

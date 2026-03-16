@@ -1,0 +1,30 @@
+#![strict]
+
+test "Path Traversal Blocking" {
+    let $unsafe_path = "../../etc/passwd";
+    // This should be blocked by Quantum Shield during analysis
+    file.read($unsafe_path);
+}
+
+test "SQL Injection Blocking - Concatenation" {
+    let $id = "1 OR 1=1";
+    // This should be blocked
+    db.query("SELECT * FROM users WHERE id = " + $id);
+}
+
+test "SQL Injection Blocking - Variable" {
+    let $sql = "DELETE FROM users";
+    // Risk: bare variable in query
+    db.query($sql);
+}
+
+test "Dead Code Elimination" {
+    return true;
+    println("This should be removed by the transpiler");
+}
+
+function verify_recursion($n: int) {
+    if ($n > 0) {
+        verify_recursion($n - 1);
+    }
+}

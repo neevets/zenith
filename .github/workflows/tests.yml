@@ -1,4 +1,4 @@
-name: Zenith Tests
+name: Tests
 
 on:
   push:

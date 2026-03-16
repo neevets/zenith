@@ -16,7 +16,7 @@ If you discover a vulnerability in the compiler or in the **Quantum Shield**, we
 
 **Contact:**
 
-* **Email:** **security@zenith-lang.org**
+* **Email:** **security@zenlang.xyz**
 * **Subject:** `[VULNERABILITY] report`
 
 ### What to include in your report:

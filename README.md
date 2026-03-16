@@ -60,7 +60,7 @@
 ## Quick Install (Linux & macOS)
 
 ```bash
-curl -fsS https://dl.zenithlang.xyz/install.sh | sh
+curl -fsS https://dl.zenlang.xyz/install.sh | sh
 ```
 
 ## Build from Source

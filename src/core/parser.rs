@@ -84,8 +84,23 @@ impl<'a> Parser<'a> {
             imports: Vec::new(),
             middleware: None,
             statements: Vec::new(),
+            is_strict: false,
             span: self.cur_token.span.clone(),
         };
+
+        if self.cur_token_is(TokenType::HashBang) {
+            self.next_token();
+            if self.cur_token_is(TokenType::LBracket) {
+                self.next_token();
+                if self.cur_token.literal == "strict" {
+                    program.is_strict = true;
+                    self.next_token();
+                    if self.cur_token_is(TokenType::RBracket) {
+                        self.next_token();
+                    }
+                }
+            }
+        }
 
         if self.cur_token_is(TokenType::Before) {
             self.next_token();
