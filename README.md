@@ -60,9 +60,10 @@
 ## Quick Install (auto-detects OS/arch)
 
 ```bash
+# Linux/MacOS
 curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y
-# or
-wget -qO- https://neevets.github.io/zenith/install.sh | sh -s -- -y
+# Windows
+iwr -useb https://neevets.github.io/zenith/install.ps1 | iex
 ```
 
 See full installer usage in [docs/installation.md](docs/installation.md).
