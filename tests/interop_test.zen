@@ -1,4 +1,4 @@
-import "https://raw.githubusercontent.com/neevets/zenith/main/test/arrow_test.zen";
+import "tests/arrow_test.zen";
 
 test "url imports and native interop" {
     let $hash = native.crypto_hash("hello zenith");

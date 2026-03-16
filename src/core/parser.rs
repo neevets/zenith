@@ -847,7 +847,6 @@ impl<'a> Parser<'a> {
     fn parse_struct_literal(&mut self) -> Expression {
         let name = self.cur_token.literal.clone();
         let start = self.cur_token.span.start;
-        self.next_token(); // consume name
         self.expect_peek(TokenType::LBrace);
         self.parse_struct_literal_with_name(name, start)
     }
@@ -884,7 +883,7 @@ impl<'a> Parser<'a> {
         let precedence = Precedence::from(&self.cur_token.token_type);
         self.next_token();
         
-        let mut right = if self.cur_token_is(TokenType::Dot) {
+        let right = if self.cur_token_is(TokenType::Dot) {
             // Modern syntax: |> .method(...)
             self.next_token();
             let method = self.cur_token.literal.clone();
@@ -1229,20 +1228,6 @@ impl<'a> Parser<'a> {
         expr
     }
 
-    fn parse_index_expression_internal(&mut self, left: Expression) -> Expression {
-        let start_span = left.span.clone();
-        self.next_token();
-        let index = self.parse_expression(Precedence::Lowest);
-        self.expect_peek(TokenType::RBracket);
-        Expression {
-            kind: ExpressionKind::IndexExpression {
-                left: Box::new(left),
-                index: Box::new(index),
-            },
-            span: start_span.start..self.cur_token.span.end,
-        }
-    }
-
     fn cur_token_is(&self, t: TokenType) -> bool {
         match (&self.cur_token.token_type, &t) {
             (TokenType::Literal(_), TokenType::Literal(_)) => true,
@@ -1323,7 +1308,6 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
 
-        self.expect_peek(TokenType::RBrace);
         Expression {
             kind: ExpressionKind::QueryBlock {
                 db,
