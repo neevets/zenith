@@ -1,4 +1,4 @@
-# Zenith: Functional Programming Patterns
+# Functional Programming Patterns
 
 Zenith introduces several functional programming constructs to make code more readable and maintainable.
 
