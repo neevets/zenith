@@ -1,9 +1,9 @@
 test "match expression" {
     let $x = 2;
     let $res = match($x) { 
-        1 => "One", 
-        2 => "Two", 
-        default => "Many" 
+        1 => "One",
+        2 => "Two",
+        default => "Many",
     };
     z_assert($res == "Two", "match expression result");
 }

@@ -1,5 +1,5 @@
 use crate::core::analyzer::LifeCycleMap;
-use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind, Parameter, CatchClause};
+use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind, Parameter};
 use std::collections::HashMap;
 
 pub struct Transpiler {
@@ -96,10 +96,8 @@ impl Transpiler {
             }
         }
 
-        let mut out = match &stmt.kind {
-            StatementKind::Import(path) => {
-                "".into()
-            }
+        let out = match &stmt.kind {
+            StatementKind::Import(_path) => "".into(),
             StatementKind::Let { name, value, .. } => {
                 let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
                 format!("{} = {};", clean_name, self.transpile_expression(value))
@@ -409,7 +407,7 @@ impl Transpiler {
                 format!("(function() {{\n{}    }})()", self.transpile_block(block))
             }
             ExpressionKind::QueryBlock { db, query, args } => {
-                let mut q = query.replace("==", "="); 
+                let q = query.replace("==", "="); 
                 let mut php_args = Vec::new();
                 for arg in args {
                     php_args.push(self.transpile_expression(arg));
@@ -465,8 +463,7 @@ impl Transpiler {
 
     fn transpile_match_expression(&mut self, condition: &Expression, arms: &[crate::core::ast::MatchArm]) -> String {
         let cond_val = "$match_val";
-        let mut out = format!("(function() use ($file, $db, $ctx) {{\n");
-        out.push_str(&format!("    {} = {};\n", cond_val, self.transpile_expression(condition)));
+        let mut out = String::from("(function($match_val) {\n");
         
         for arm in arms {
             if arm.is_default {
@@ -496,7 +493,7 @@ impl Transpiler {
             }
         }
         out.push_str("    return null;\n");
-        out.push_str("})()");
+        out.push_str(&format!("}})({})", self.transpile_expression(condition)));
         out
     }
 
@@ -558,6 +555,7 @@ impl Transpiler {
         out.push_str("}\n\n");
         out.push_str("function z_assert($cond, $msg = 'Assertion failed') { if (!$cond) throw new Exception($msg); }\n\n");
         out.push_str("$ctx = new stdClass();\n");
+        out.push_str("$ctx->path = $_SERVER['REQUEST_URI'] ?? '/';\n");
         out.push_str("$env = (object)$_ENV;\n");
         out.push_str("$file = new class {\n");
         out.push_str("    public function write($p, $c) { file_put_contents($p, $c); }\n");
