@@ -1,4 +1,4 @@
-# Zenith Architecture & Security
+# Architecture & Security
 
 Zenith is built for the enterprise, where safety and security are paramount.
 
