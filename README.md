@@ -67,20 +67,6 @@ wget -qO- https://neevets.github.io/zenith/install.sh | sh -s -- -y
 
 See full installer usage in [docs/installation.md](docs/installation.md).
 
-## Build from Source
-
-```bash
-# Clone and build
-git clone https://github.com/neevets/zenith
-cd zenith
-cargo build --release
-
-# Move to path
-sudo mv target/release/zenith /usr/local/bin/
-```
-
----
-
 # Documentation
 
 - [Syntax & Types](docs/syntax.md)
