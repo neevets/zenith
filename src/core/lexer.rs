@@ -63,6 +63,8 @@ pub enum TokenType {
     Try,
     #[token("catch")]
     Catch,
+    #[token("finally")]
+    Finally,
 
     #[token("int")]
     IntType,

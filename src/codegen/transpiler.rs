@@ -1,5 +1,5 @@
 use crate::core::analyzer::LifeCycleMap;
-use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind, Parameter};
+use crate::core::ast::{BlockStatement, Expression, ExpressionKind, Program, Statement, StatementKind, Parameter, CatchClause};
 use std::collections::HashMap;
 
 pub struct Transpiler {
@@ -97,8 +97,9 @@ impl Transpiler {
         }
 
         let mut out = match &stmt.kind {
-            StatementKind::Import(_) => "".into(),
-            StatementKind::Middleware(_) => "".into(),
+            StatementKind::Import(path) => {
+                "".into()
+            }
             StatementKind::Let { name, value, .. } => {
                 let clean_name = if name.starts_with('$') { name.clone() } else { format!("${}", name) };
                 format!("{} = {};", clean_name, self.transpile_expression(value))
@@ -181,17 +182,26 @@ impl Transpiler {
                 out.push_str("}\n");
                 out
             }
-            StatementKind::TryCatch { try_block, catch_variable, catch_block } => {
+            StatementKind::TryCatch { try_block, catch_clauses, finally_block } => {
                 let mut out = format!("try {{\n");
                 out.push_str(&self.transpile_block(try_block));
-                let var = if let Some(v) = catch_variable {
-                    if v.starts_with('$') { v.clone() } else { format!("${}", v) }
-                } else {
-                    "$e".to_string()
-                };
-                out.push_str(&format!("}} catch (Throwable {}) {{\n", var));
-                out.push_str(&self.transpile_block(catch_block));
                 out.push_str("}");
+                for clause in catch_clauses {
+                    let php_type = if let Some(t) = &clause.exception_type {
+                        t.replace('.', "\\")
+                    } else {
+                        "Throwable".to_string()
+                    };
+                    let var = if clause.variable.starts_with('$') { clause.variable.clone() } else { format!("${}", clause.variable) };
+                    out.push_str(&format!(" catch ({} {}) {{\n", php_type, var));
+                    out.push_str(&self.transpile_block(&clause.body));
+                    out.push_str("}");
+                }
+                if let Some(finally) = finally_block {
+                    out.push_str(" finally {\n");
+                    out.push_str(&self.transpile_block(finally));
+                    out.push_str("}");
+                }
                 out
             }
             StatementKind::Middleware(body) => {
@@ -231,7 +241,7 @@ impl Transpiler {
                 else if name == "ctx" { self.current_used_vars.insert("ctx".into()); "$ctx".into() }
                 else if name == "env" { self.current_used_vars.insert("env".into()); "$env".into() }
                 else if name == "json" { "json".into() }
-                else { name.clone() }
+                else { name.replace('.', "\\") }
             }
             ExpressionKind::Variable(name) => name.clone(),
             ExpressionKind::IntegerLiteral(val) => val.to_string(),
@@ -336,15 +346,25 @@ impl Transpiler {
                 format!("fn({}) => {}", params.join(", "), self.transpile_expression(body))
             }
             ExpressionKind::PipeExpression { left, right } => {
+                if let ExpressionKind::Identifier(ref name) = right.kind {
+                    if name == "placeholder" {
+                        return self.transpile_expression(left);
+                    }
+                }
+                
                 if let ExpressionKind::CallExpression { function, arguments } = &right.kind {
                     let func = self.transpile_expression(function);
                     let mut args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
                     args.insert(0, self.transpile_expression(left));
                     format!("{}({})", func, args.join(", "))
                 } else if let ExpressionKind::MethodCallExpression { object, method, arguments, is_nullsafe } = &right.kind {
-                    let obj = self.transpile_expression(object);
+                    let obj_s = self.transpile_expression(object);
+                    let is_placeholder = obj_s == "placeholder";
+                    let obj = if is_placeholder { self.transpile_expression(left) } else { obj_s };
                     let mut args: Vec<String> = arguments.iter().map(|e| self.transpile_expression(e)).collect();
-                    args.insert(0, self.transpile_expression(left));
+                    if !is_placeholder {
+                        args.insert(0, self.transpile_expression(left));
+                    }
                     let op = if *is_nullsafe { "?->" } else { "->" };
                     format!("{}{}{}({})", obj, op, method, args.join(", "))
                 } else {
@@ -383,7 +403,7 @@ impl Transpiler {
                     let clean_n = if n.starts_with('$') { &n[1..] } else { n };
                     format!("'{}' => {}", clean_n, self.transpile_expression(v))
                 }).collect();
-                format!("new {}(...[{}])", name, fds.join(", "))
+                format!("new {}(...[{}])", name.replace('.', "\\"), fds.join(", "))
             }
             ExpressionKind::Block(block) => {
                 format!("(function() {{\n{}    }})()", self.transpile_block(block))

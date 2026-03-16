@@ -1,6 +1,6 @@
 use crate::core::ast::{
     BlockStatement, EnumCase, Expression, ExpressionKind, MatchArm, Parameter, Pattern, PatternKind,
-    Program, Statement, StatementKind, StructField,
+    Program, Statement, StatementKind, StructField, CatchClause,
 };
 use crate::core::lexer::{Lexer, Token, TokenType};
 use logos::Span;
@@ -41,7 +41,7 @@ impl From<&TokenType> for Precedence {
             TokenType::Coalesce => Precedence::Coalesce,
             TokenType::Or => Precedence::Or,
             TokenType::And => Precedence::And,
-            TokenType::LParen => Precedence::Call,
+            TokenType::LParen | TokenType::LBrace => Precedence::Call,
             TokenType::LBracket | TokenType::Nullsafe => Precedence::Index,
             TokenType::Dot => Precedence::Call,
             TokenType::Lt | TokenType::Gt | TokenType::Leq | TokenType::Geq | TokenType::Eq | TokenType::NotEq => Precedence::Comparison,
@@ -400,6 +400,22 @@ impl<'a> Parser<'a> {
                 TokenType::Dot | TokenType::Nullsafe => {
                     self.next_token();
                     left = self.parse_method_call_expression(left);
+                }
+                TokenType::LBrace => {
+                    // Check if the left expression is something we can turn into a StructLiteral name
+                    match &left.kind {
+                        ExpressionKind::Identifier(name) => {
+                            self.next_token();
+                            left = self.parse_struct_literal_with_name(name.clone(), left.span.start);
+                        }
+                        ExpressionKind::MethodCallExpression { object, method, arguments, .. } if arguments.is_empty() => {
+                            // Convert Namespaced access (Fuel.Email) followed by { into a StructLiteral
+                            let full_name = format!("{}.{}", self.get_expr_name(object), method);
+                            self.next_token();
+                            left = self.parse_struct_literal_with_name(full_name, left.span.start);
+                        }
+                        _ => return left,
+                    }
                 }
                 TokenType::LParen => {
                     self.next_token();
@@ -829,10 +845,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_literal(&mut self) -> Expression {
-        let start_span = self.cur_token.span.clone();
         let name = self.cur_token.literal.clone();
+        let start = self.cur_token.span.start;
+        self.next_token(); // consume name
         self.expect_peek(TokenType::LBrace);
+        self.parse_struct_literal_with_name(name, start)
+    }
 
+    fn parse_struct_literal_with_name(&mut self, name: String, start: usize) -> Expression {
         let mut fields = Vec::new();
         while !self.peek_token_is(TokenType::RBrace) && !self.peek_token_is(TokenType::Eof) {
             self.next_token();
@@ -847,7 +867,15 @@ impl<'a> Parser<'a> {
         self.expect_peek(TokenType::RBrace);
         Expression {
             kind: ExpressionKind::StructLiteral { name, fields },
-            span: start_span.start..self.cur_token.span.end,
+            span: start..self.cur_token.span.end,
+        }
+    }
+
+    fn get_expr_name(&self, expr: &Expression) -> String {
+        match &expr.kind {
+            ExpressionKind::Identifier(n) => n.clone(),
+            ExpressionKind::MethodCallExpression { object, method, .. } => format!("{}.{}", self.get_expr_name(object), method),
+            _ => "".into(),
         }
     }
 
@@ -855,7 +883,32 @@ impl<'a> Parser<'a> {
         let start_span = left.span.clone();
         let precedence = Precedence::from(&self.cur_token.token_type);
         self.next_token();
-        let right = self.parse_expression(precedence);
+        
+        let mut right = if self.cur_token_is(TokenType::Dot) {
+            // Modern syntax: |> .method(...)
+            self.next_token();
+            let method = self.cur_token.literal.clone();
+            if self.peek_token_is(TokenType::LParen) {
+                self.next_token();
+                let arguments = self.parse_expression_list(TokenType::RParen);
+                Expression {
+                    kind: ExpressionKind::MethodCallExpression {
+                        object: Box::new(Expression { kind: ExpressionKind::Identifier("placeholder".into()), span: 0..0 }),
+                        method,
+                        arguments,
+                        is_nullsafe: false,
+                    },
+                    span: self.cur_token.span.clone(),
+                }
+            } else {
+                Expression {
+                    kind: ExpressionKind::Identifier(method),
+                    span: self.cur_token.span.clone(),
+                }
+            }
+        } else {
+            self.parse_expression(precedence)
+        };
 
         Expression {
             kind: ExpressionKind::PipeExpression {
@@ -934,6 +987,12 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> String {
         let mut t = self.cur_token.literal.clone();
+        while self.peek_token_is(TokenType::Dot) {
+            self.next_token();
+            self.expect_peek(TokenType::Ident);
+            t.push_str(".");
+            t.push_str(&self.cur_token.literal);
+        }
         if self.peek_token_is(TokenType::LBracket) {
             self.next_token();
             self.expect_peek(TokenType::RBracket);
@@ -1042,28 +1101,57 @@ impl<'a> Parser<'a> {
         self.expect_peek(TokenType::LBrace);
         let try_block = self.parse_block_statement();
         
-        let mut catch_variable = None;
-        let mut catch_block = BlockStatement { statements: vec![], span: try_block.span.clone() };
+        let mut catch_clauses = Vec::new();
+        let mut finally_block = None;
 
-        if self.peek_token_is(TokenType::Catch) {
+        while self.peek_token_is(TokenType::Catch) {
             self.next_token();
+            let mut exception_type = None;
+            let mut variable = "$e".to_string();
+
             if self.peek_token_is(TokenType::LParen) {
-                self.next_token();
-                self.expect_peek(TokenType::Var);
-                catch_variable = Some(self.cur_token.literal.clone());
+                self.next_token(); // consume (
+                self.next_token(); // move to type or variable
+                
+                // Check if we have a type + variable or just variable
+                if self.cur_token_is(TokenType::Ident) {
+                    exception_type = Some(self.parse_type());
+                    self.expect_peek(TokenType::Var);
+                    variable = self.cur_token.literal.clone();
+                } else if self.cur_token_is(TokenType::Var) {
+                    variable = self.cur_token.literal.clone();
+                } else {
+                    self.expect_peek(TokenType::Var); // Trigger error
+                }
+                
                 self.expect_peek(TokenType::RParen);
             }
+            
             self.expect_peek(TokenType::LBrace);
-            catch_block = self.parse_block_statement();
+            let body = self.parse_block_statement();
+            catch_clauses.push(CatchClause {
+                exception_type,
+                variable,
+                body,
+            });
         }
 
-        let end = catch_block.span.end;
+        if self.peek_token_is(TokenType::Finally) {
+            self.next_token();
+            self.expect_peek(TokenType::LBrace);
+            finally_block = Some(self.parse_block_statement());
+        }
+
+        let end = finally_block.as_ref().map(|f| f.span.end).unwrap_or_else(|| {
+            catch_clauses.last().map(|c| c.body.span.end).unwrap_or(try_block.span.end)
+        });
+
         Statement {
             attributes: Vec::new(),
             kind: StatementKind::TryCatch {
                 try_block,
-                catch_variable,
-                catch_block,
+                catch_clauses,
+                finally_block,
             },
             span: start_span.start..end,
         }

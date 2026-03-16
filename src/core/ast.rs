@@ -177,10 +177,17 @@ pub enum StatementKind {
     },
     TryCatch {
         try_block: BlockStatement,
-        catch_variable: Option<String>,
-        catch_block: BlockStatement,
+        catch_clauses: Vec<CatchClause>,
+        finally_block: Option<BlockStatement>,
     },
     Middleware(BlockStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct CatchClause {
+    pub exception_type: Option<String>,
+    pub variable: String,
+    pub body: BlockStatement,
 }
 
 #[derive(Debug, Clone)]
