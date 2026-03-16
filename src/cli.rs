@@ -28,6 +28,7 @@ enum Commands {
         #[arg(short, long)]
         reload: bool,
     },
+    #[command(alias = "tests")]
     Test {
         file: Option<String>,
         #[arg(short, long)]
@@ -123,6 +124,7 @@ fn execute_run(file: &str, show_php: bool) -> anyhow::Result<()> {
 
 fn execute_test(file: Option<&String>, show_php: bool) -> anyhow::Result<()> {
     use colored::Colorize;
+    use std::path::Path;
     use walkdir::WalkDir;
 
     let engine = Engine::new(EngineOptions {
@@ -133,29 +135,38 @@ fn execute_test(file: Option<&String>, show_php: bool) -> anyhow::Result<()> {
 
     let mut files = Vec::new();
 
-    if let Some(f) = file {
-        files.push(f.clone());
-    } else {
-        
-        let test_regex = regex::Regex::new(r#"(?m)^\s*test\s+"#).unwrap();
+    let test_regex = regex::Regex::new(r#"(?m)^\s*test\s+"#).unwrap();
 
-        let mut find_zen_files = |dir: &str| {
-            for entry in WalkDir::new(dir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file() && e.path().extension().map_or(false, |ext| ext == "zen"))
-            {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if test_regex.is_match(&content) {
-                        files.push(entry.path().to_string_lossy().to_string());
-                    }
+    let mut find_zen_files = |dir: &str| {
+        for entry in WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().is_file() && e.path().extension().map_or(false, |ext| ext == "zen")
+            })
+        {
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                if test_regex.is_match(&content) {
+                    files.push(entry.path().to_string_lossy().to_string());
                 }
             }
-        };
+        }
+    };
 
+    if let Some(f) = file {
+        let path = Path::new(f);
+        if path.is_dir() {
+            find_zen_files(f);
+        } else {
+            files.push(f.clone());
+        }
+    } else {
         find_zen_files("src");
-        if std::path::Path::new("test").exists() {
+        if Path::new("test").exists() {
             find_zen_files("test");
+        }
+        if Path::new("tests").exists() {
+            find_zen_files("tests");
         }
     }
 
