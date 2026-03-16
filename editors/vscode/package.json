@@ -3,6 +3,7 @@
     "displayName": "Zenith Language Support",
     "description": "Syntax highlighting and language configuration for Zenith",
     "version": "0.1.5",
+    "license": "MIT",
     "publisher": "neevets",
     "repository": {
         "type": "git",

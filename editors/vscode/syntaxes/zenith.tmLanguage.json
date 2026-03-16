@@ -43,11 +43,11 @@
             "patterns": [
                 {
                     "name": "keyword.control.zenith",
-                    "match": "\\b(if|else|while|for|return|match|default|spawn|yield|import|render|middleware|struct|enum)\\b"
+                    "match": "\\b(if|else|while|for|return|match|default|spawn|yield|import|render|function|middleware|struct|enum)\\b"
                 },
                 {
                     "name": "storage.type.zenith",
-                    "match": "\\b(let|native|fn)\\b"
+                    "match": "\\b(let|native)\\b"
                 },
                 {
                     "name": "constant.language.zenith",

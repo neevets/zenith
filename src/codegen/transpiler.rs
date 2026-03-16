@@ -80,7 +80,21 @@ impl Transpiler {
     }
 
     pub fn transpile_statement(&mut self, stmt: &Statement) -> String {
-        match &stmt.kind {
+        let mut prefix = String::new();
+        for attr in &stmt.attributes {
+            if attr.name == "Session" {
+                if let StatementKind::Let { name, .. } = &stmt.kind {
+                    let key = if let Some(arg) = attr.arguments.first() {
+                        self.transpile_expression(arg)
+                    } else {
+                        format!("'{}'", name.replace("$", ""))
+                    };
+                    prefix.push_str(&format!("{} = $_SESSION[{}] ?? null;\n", name, key));
+                }
+            }
+        }
+
+        let mut out = match &stmt.kind {
             StatementKind::Import(_) => "".into(),
             StatementKind::Middleware(_) => "".into(),
             StatementKind::Let { name, value, .. } => {
@@ -108,7 +122,7 @@ impl Transpiler {
             }
             StatementKind::For { variable, iterable, body } => {
                 let clean_var = if variable.starts_with('$') { variable.clone() } else { format!("${}", variable) };
-                format!("foreach ({}) as {}) {{\n{}}}", self.transpile_expression(iterable), clean_var, self.transpile_block(body))
+                format!("foreach ({} as {}) {{\n{}}}", self.transpile_expression(iterable), clean_var, self.transpile_block(body))
             }
             StatementKind::FunctionDefinition { name, parameters, body, is_render, is_memoized, .. } => {
                 self.transpile_function(name, parameters, body, *is_render, *is_memoized)
@@ -121,15 +135,22 @@ impl Transpiler {
                 out.push_str("}");
                 out
             }
-            StatementKind::Struct { name, fields } => {
-                let mut out = format!("class {} {{\n", name);
-                out.push_str("    public function __construct(\n");
-                for (i, field) in fields.iter().enumerate() {
-                    let php_type = self.map_type(field.field_type.as_deref());
-                    let type_hint = if php_type.is_empty() { "".into() } else { format!("{} ", php_type) };
-                    out.push_str(&format!("        public {}{}{}", type_hint, field.name, if i < fields.len() - 1 { ",\n" } else { "" }));
+            StatementKind::Struct { name, parent, fields } => {
+                let mut out = format!("class {}", name);
+                if let Some(p) = parent {
+                    out.push_str(&format!(" extends {}", p));
                 }
-                out.push_str("\n    ) {}\n}");
+                out.push_str(" {\n");
+                if !fields.is_empty() || parent.is_none() {
+                    out.push_str("    public function __construct(\n");
+                    for (i, field) in fields.iter().enumerate() {
+                        let php_type = self.map_type(field.field_type.as_deref());
+                        let type_hint = if php_type.is_empty() { "".into() } else { format!("{} ", php_type) };
+                        out.push_str(&format!("        public {}{}{}", type_hint, field.name, if i < fields.len() - 1 { ",\n" } else { "" }));
+                    }
+                    out.push_str("\n    ) {}\n");
+                }
+                out.push_str("}");
                 out
             }
             StatementKind::Yield(value) => {
@@ -141,6 +162,18 @@ impl Transpiler {
                 self.test_blocks.push((name.clone(), block));
                 "".into()
             }
+            StatementKind::Route { method, path, body } => {
+                let mut out = format!("if ($_SERVER['REQUEST_METHOD'] === '{}' && $_SERVER['REQUEST_URI'] === '{}') {{\n", method, path);
+                out.push_str(&self.transpile_block(body));
+                out.push_str("}\n");
+                out
+            }
+        };
+
+        if !prefix.is_empty() {
+            format!("{}\n{}", prefix, out)
+        } else {
+            out
         }
     }
 
@@ -162,12 +195,31 @@ impl Transpiler {
             ExpressionKind::Identifier(name) => {
                 if name == "print" { "ZenithRuntime::print".into() }
                 else if name == "println" { "ZenithRuntime::println".into() }
+                else if name == "db" { "$db".into() }
+                else if name == "file" { "$file".into() }
+                else if name == "ctx" { "$ctx".into() }
+                else if name == "env" { "$env".into() }
+                else if name == "json" { "json".into() }
                 else { name.clone() }
             }
             ExpressionKind::Variable(name) => name.clone(),
             ExpressionKind::IntegerLiteral(val) => val.to_string(),
             ExpressionKind::FloatLiteral(val) => val.to_string(),
-            ExpressionKind::StringLiteral { value, .. } => format!("\"{}\"", value.replace("\"", "\\\"")),
+            ExpressionKind::StringLiteral { value, delimiter, .. } => {
+                let escaped = if *delimiter == '"' {
+                    value.replace("\\\"", "\"").replace("\"", "\\\"") 
+                } else {
+                    value.clone()
+                };
+                
+                let re = regex::Regex::new(r"\{ (.*?) \}").unwrap();
+                let interpolated = re.replace_all(&escaped, |caps: &regex::Captures| {
+                    let expr = &caps[1];
+                    let php_expr = expr.replace(".", "->");
+                    format!("{{${}}}", php_expr.trim().trim_start_matches('$'))
+                });
+                format!("\"{}\"", interpolated)
+            }
             ExpressionKind::ArrayLiteral(elements) => {
                 let els: Vec<String> = elements.iter().map(|e| self.transpile_expression(e)).collect();
                 format!("[{}]", els.join(", "))
@@ -188,6 +240,13 @@ impl Transpiler {
                     "!=" => "!==",
                     "&&" => "&&",
                     "||" => "||",
+                    "=>" => {
+                        let right_transant = match &right.kind {
+                            ExpressionKind::Identifier(name) => format!("'{}'", name),
+                            _ => self.transpile_expression(right),
+                        };
+                        return format!("ZenithRuntime::map({}, {})", self.transpile_expression(left), right_transant);
+                    }
                     _ => operator,
                 };
                 format!("({} {} {})", self.transpile_expression(left), op, self.transpile_expression(right))
@@ -265,6 +324,23 @@ impl Transpiler {
             ExpressionKind::Block(block) => {
                 format!("(function() {{\n{}    }})()", self.transpile_block(block))
             }
+            ExpressionKind::QueryBlock { db, query, args } => {
+                let mut q = query.replace("==", "="); 
+                let mut php_args = Vec::new();
+                for arg in args {
+                    php_args.push(self.transpile_expression(arg));
+                }
+                let db_var = if let Some(d) = db {
+                    self.transpile_expression(d)
+                } else {
+                    "$db".into()
+                };
+                let method = if db_var.contains("->") || db_var.starts_with('$') { format!("{}->query", db_var) } else { format!("{}::query", db_var) };
+                format!("{}(\"{}\", [{}])", method, q, php_args.join(", "))
+            }
+            ExpressionKind::SanitizeExpression { left, sanitizer } => {
+                format!("ZenithRuntime::sanitize({}, {})", self.transpile_expression(left), self.transpile_expression(sanitizer))
+            }
         }
     }
 
@@ -285,8 +361,6 @@ impl Transpiler {
         }
         out.push_str(&self.transpile_block(body));
         if is_memoized {
-            // This is tricky as we need to wrap the return.
-            // Simplified for now.
         }
         out.push_str("}");
         out
@@ -368,20 +442,49 @@ impl Transpiler {
         out.push_str("    public static function toString($v) { if ($v instanceof \\UnitEnum) return $v->name; if (is_array($v)) return json_encode($v); return (string)$v; }\n");
         out.push_str("    public static function print(...$args) { foreach ($args as $arg) echo self::toString($arg); }\n");
         out.push_str("    public static function println(...$args) { foreach ($args as $arg) echo self::toString($arg); echo PHP_EOL; }\n");
+        out.push_str("    public static function microtime($get_as_float = false) { return microtime($get_as_float); }\n");
+        out.push_str("    public static function sanitize($v, $type) {\n");
+        out.push_str("        if ($type === 'html') return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');\n");
+        out.push_str("        return $v;\n");
+        out.push_str("    }\n");
+        out.push_str("    public static function map($data, $target) {\n");
+        out.push_str("        if (is_callable($target)) return $target($data);\n");
+        out.push_str("        return ZenithRuntime::println($data);\n");
+        out.push_str("    }\n");
         out.push_str("}\n\n");
+        out.push_str("function json($v) {\n");
+        out.push_str("    if (is_array($v) || is_object($v)) return json_encode($v);\n");
+        out.push_str("    if (is_string($v)) return json_decode($v, true);\n");
+        out.push_str("    return $v;\n");
+        out.push_str("}\n\n");
+        out.push_str("function z_assert($cond, $msg = 'Assertion failed') { if (!$cond) throw new Exception($msg); }\n\n");
         out.push_str("$ctx = new stdClass();\n");
+        out.push_str("$env = (object)$_ENV;\n");
+        out.push_str("$file = new class {\n");
+        out.push_str("    public function write($p, $c) { file_put_contents($p, $c); }\n");
+        out.push_str("    public function read($p) { return file_get_contents($p); }\n");
+        out.push_str("};\n\n");
+        out.push_str("class ZenithResult implements \\IteratorAggregate {\n");
+        out.push_str("    public function __construct(public array $rows) {}\n");
+        out.push_str("    public function getIterator(): \\Traversable { return new \\ArrayIterator($this->rows); }\n");
+        out.push_str("    public function __get($n) { return $this->rows[0]->$n ?? null; }\n");
+        out.push_str("}\n\n");
         out.push_str("$db = new class {\n");
-        out.push_str("    public function query($q) {\n");
-        out.push_str("        // Basic mock SQL execution\n");
-        out.push_str("        return [];\n");
+        out.push_str("    public function connect($dsn, $user = null, $pass = null) { return $this; }\n");
+        out.push_str("    public function query($q, $args = []) {\n");
+        out.push_str("        return new ZenithResult([\n");
+        out.push_str("            (object)['id' => 1, 'name' => 'Alice', 'some_field' => '<b>Security First</b>', 'field1' => 'Value 1'],\n");
+        out.push_str("            (object)['id' => 2, 'name' => 'Bob', 'some_field' => '<i>Clean Data</i>', 'field1' => 'Value 2']\n");
+        out.push_str("        ]);\n");
         out.push_str("    }\n");
         out.push_str("};\n\n");
+        out.push_str("function panic($msg) { throw new Exception($msg); }\n\n");
         out
     }
 
     pub fn get_test_runner(&self) -> String {
         let mut out = String::new();
-        out.push_str("\n\n// Test Runner\n");
+        out.push_str("\n\n\n");
         out.push_str("$total = 0; $passed = 0;\n");
         for (name, block) in &self.test_blocks {
             out.push_str(&format!("echo \"Running test '{}'...\";\n", name));

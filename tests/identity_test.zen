@@ -1,0 +1,40 @@
+
+
+test "Struct Inheritance" {
+    struct Base { $a: int; }
+    struct Derived : Base {}
+    
+    let $d = Derived { a: 1 };
+    assertTrue($d.a == 1);
+}
+
+test "SQL Query Block - Basic" {
+    let $res = query { SELECT * FROM users };
+    assertTrue($res.field != "");
+}
+
+test "SQL Query Block - With Connection" {
+    let $my_db = db.connect("sqlite::memory:");
+    let $res = query($my_db) { SELECT val FROM data WHERE id == 10 };
+    assertTrue($res.field != "");
+}
+
+test "Sanitization Operator" {
+    let $unsafe = "<script>alert(1)</script>";
+    let $safe = $unsafe !> "html";
+    assertTrue($safe != $unsafe);
+    assertTrue($safe == "&lt;script&gt;alert(1)&lt;/script&gt;");
+}
+
+test "Routing Syntax" {
+    route GET "/api/test" => {
+        print("OK");
+    }
+}
+
+
+function assertTrue($cond: bool) {
+    if (!$cond) {
+        panic("Assertion failed");
+    }
+}

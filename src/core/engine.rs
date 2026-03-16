@@ -63,14 +63,12 @@ impl Engine {
             hasher.update(input.as_bytes());
             source_hash = format!("{:x}", hasher.finalize());
             if let Some(cached_php) = c.get_transpiled(&source_hash) {
-                if filename.starts_with("http") {
-                    module_map.insert(
-                        filename.to_string(),
-                        c.get_transpiled_path(&source_hash)
-                            .to_string_lossy()
-                            .to_string(),
-                    );
-                }
+                module_map.insert(
+                    filename.to_string(),
+                    c.get_transpiled_path(&source_hash)
+                        .to_string_lossy()
+                        .to_string(),
+                );
                 return Ok(cached_php);
             }
         }
@@ -107,7 +105,7 @@ impl Engine {
             ));
         }
 
-        
+
         for import_stmt in &program.imports {
             if let StatementKind::Import(path) = &import_stmt.kind {
                 if path.starts_with("http") && !module_map.contains_key(path) {
@@ -152,14 +150,12 @@ impl Engine {
         if let Some(ref c) = cm {
             if !source_hash.is_empty() {
                 c.save_transpiled(&source_hash, &php_code)?;
-                if filename.starts_with("http") {
-                    module_map.insert(
-                        filename.to_string(),
-                        c.get_transpiled_path(&source_hash)
-                            .to_string_lossy()
-                            .to_string(),
-                    );
-                }
+                module_map.insert(
+                    filename.to_string(),
+                    c.get_transpiled_path(&source_hash)
+                        .to_string_lossy()
+                        .to_string(),
+                );
             }
         }
 

@@ -11,6 +11,8 @@ pub enum TokenType {
     Return,
     #[token("print")]
     Print,
+    #[token("println")]
+    Println,
     #[token("let")]
     Let,
     #[token("import")]
@@ -31,8 +33,20 @@ pub enum TokenType {
     In,
     #[token("match")]
     Match,
-    #[token("fn")]
-    Fn,
+    #[token("route")]
+    Route,
+    #[token("GET")]
+    Get,
+    #[token("POST")]
+    Post,
+    #[token("PUT")]
+    Put,
+    #[token("DELETE")]
+    Delete,
+    #[token("PATCH")]
+    Patch,
+    #[token("query")]
+    Query,
     #[token("spawn")]
     Spawn,
     #[token("yield")]
@@ -74,8 +88,6 @@ pub enum TokenType {
     Insert,
     #[token("UPDATE")]
     Update,
-    #[token("DELETE")]
-    Delete,
     #[token("INTO")]
     Into,
     #[token("VALUES")]
@@ -117,6 +129,8 @@ pub enum TokenType {
     LBracket,
     #[token("]")]
     RBracket,
+    #[token("#[")]
+    LBracketHash,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -141,6 +155,8 @@ pub enum TokenType {
     Colon,
     #[token("|>")]
     Pipe,
+    #[token("!>")]
+    Sanitize,
     #[token("?->")]
     Nullsafe,
     #[token("=>")]
@@ -160,6 +176,9 @@ pub enum TokenType {
 
     #[regex(r"//.*", logos::skip)]
     Comment,
+
+    #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip)]
+    MultiLineComment,
 
     Eof,
 }

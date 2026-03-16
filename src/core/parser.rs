@@ -25,6 +25,7 @@ enum Precedence {
     Sum,
     Product,
     Modulo,
+    Sanitize,
     Prefix,
     Call,
     Index,
@@ -33,7 +34,9 @@ enum Precedence {
 impl From<&TokenType> for Precedence {
     fn from(t: &TokenType) -> Self {
         match t {
+            TokenType::Arrow => Precedence::Pipe,
             TokenType::Pipe => Precedence::Pipe,
+            TokenType::Sanitize => Precedence::Sanitize,
             TokenType::Assign => Precedence::Assign,
             TokenType::Coalesce => Precedence::Coalesce,
             TokenType::Or => Precedence::Or,
@@ -114,7 +117,7 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Option<Statement> {
         match self.cur_token.token_type {
             TokenType::Render => Some(self.parse_function_definition(true, false)),
-            TokenType::Function | TokenType::Fn => Some(self.parse_function_definition(false, false)),
+            TokenType::Function => Some(self.parse_function_definition(false, false)),
             TokenType::Return => Some(self.parse_return_statement()),
             TokenType::Let => Some(self.parse_let_statement()),
             TokenType::If => Some(self.parse_if_statement()),
@@ -123,7 +126,9 @@ impl<'a> Parser<'a> {
             TokenType::Yield => Some(self.parse_yield_statement()),
             TokenType::Enum => Some(self.parse_enum_statement()),
             TokenType::Test => Some(self.parse_test_statement()),
+            TokenType::Import => Some(self.parse_import_statement()),
             TokenType::Struct => Some(self.parse_struct_definition()),
+            TokenType::Route => Some(self.parse_route_statement()),
             TokenType::At => {
                 self.next_token();
                 if self.cur_token.literal == "memoize" {
@@ -176,6 +181,7 @@ impl<'a> Parser<'a> {
         self.is_render = old_render;
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::FunctionDefinition {
                 name,
                 parameters,
@@ -209,6 +215,7 @@ impl<'a> Parser<'a> {
         }
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Let { name, value, var_type },
             span: start_span.start..self.cur_token.span.end,
         }
@@ -224,6 +231,7 @@ impl<'a> Parser<'a> {
         }
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Return(value.clone()),
             span: start_span.start..self.cur_token.span.end,
         }
@@ -236,14 +244,23 @@ impl<'a> Parser<'a> {
         }
         let name = self.cur_token.literal.clone();
 
+        let mut parent = None;
+        if self.peek_token_is(TokenType::Colon) {
+            self.next_token();
+            self.expect_peek(TokenType::Ident);
+            parent = Some(self.cur_token.literal.clone());
+        }
+
         self.expect_peek(TokenType::LBrace);
         let mut fields = Vec::new();
 
         while !self.peek_token_is(TokenType::RBrace) && !self.peek_token_is(TokenType::Eof) {
             self.next_token();
             let mut is_readonly = false;
-            if self.cur_token_is(TokenType::Readonly) {
-                is_readonly = true;
+            if self.cur_token_is(TokenType::Readonly) || self.cur_token_is(TokenType::Let) {
+                if self.cur_token_is(TokenType::Readonly) {
+                    is_readonly = true;
+                }
                 self.next_token();
             }
 
@@ -270,7 +287,8 @@ impl<'a> Parser<'a> {
         self.expect_peek(TokenType::RBrace);
 
         Statement {
-            kind: StatementKind::Struct { name, fields },
+            attributes: Vec::new(),
+            kind: StatementKind::Struct { name, parent, fields },
             span: start_span.start..self.cur_token.span.end,
         }
     }
@@ -302,6 +320,7 @@ impl<'a> Parser<'a> {
         }
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Expression(expression.clone()),
             span: start_span.start..self.cur_token.span.end,
         }
@@ -309,7 +328,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expression(&mut self, precedence: Precedence) -> Expression {
         let mut left = match self.cur_token.token_type {
-            TokenType::Ident => {
+            TokenType::Ident | TokenType::Print | TokenType::Println => {
                 if self.peek_token_is(TokenType::LBrace) {
                     self.parse_struct_literal()
                 } else {
@@ -337,7 +356,8 @@ impl<'a> Parser<'a> {
             | TokenType::Into
             | TokenType::Values
             | TokenType::Set => self.parse_sql_query_expression(self.cur_token.span.start),
-            TokenType::Fn => self.parse_arrow_function_expression(),
+            TokenType::Query => self.parse_query_block_expression(),
+            TokenType::Function => self.parse_arrow_function_expression(),
             TokenType::Spawn => self.parse_spawn_expression(),
             TokenType::Match => self.parse_match_expression(),
             _ => {
@@ -371,7 +391,8 @@ impl<'a> Parser<'a> {
                 | TokenType::Eq
                 | TokenType::NotEq
                 | TokenType::And
-                | TokenType::Or => {
+                | TokenType::Or
+                | TokenType::Arrow => {
                     self.next_token();
                     left = self.parse_infix_expression(left);
                 }
@@ -390,6 +411,10 @@ impl<'a> Parser<'a> {
                 TokenType::Pipe => {
                     self.next_token();
                     left = self.parse_pipe_expression(left);
+                }
+                TokenType::Sanitize => {
+                    self.next_token();
+                    left = self.parse_sanitize_expression(left);
                 }
                 TokenType::Coalesce => {
                     self.next_token();
@@ -737,8 +762,8 @@ impl<'a> Parser<'a> {
             TokenType::Ident | TokenType::Var => {
                 let name = start_token.literal.clone();
                 if self.peek_token_is(TokenType::LBrace) {
-                    self.next_token(); // move to LBrace
-                    self.next_token(); // move to first field
+                    self.next_token();
+                    self.next_token();
                     let mut fields = Vec::new();
                     while !self.cur_token_is(TokenType::RBrace) && !self.cur_token_is(TokenType::Eof) {
                         let field_name = if self.cur_token.literal.starts_with('$') {
@@ -747,7 +772,7 @@ impl<'a> Parser<'a> {
                             self.cur_token.literal.clone()
                         };
                         self.expect_peek(TokenType::Colon);
-                        self.next_token(); // move to pattern
+                        self.next_token();
                         fields.push((field_name, self.parse_pattern()));
                         if self.peek_token_is(TokenType::Comma) {
                             self.next_token();
@@ -766,7 +791,7 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                let expr = self.parse_expression(Precedence::Lowest);
+                let expr = self.parse_expression(Precedence::Pipe);
                 Pattern {
                     kind: PatternKind::Literal(expr.clone()),
                     span: expr.span,
@@ -793,6 +818,7 @@ impl<'a> Parser<'a> {
     fn parse_block_statement_as_statement(&mut self) -> Statement {
         let block = self.parse_block_statement();
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Expression(Expression {
                 kind: ExpressionKind::Block(block.clone()),
                 span: block.span.clone(),
@@ -955,6 +981,7 @@ impl<'a> Parser<'a> {
         let end_span = alternative.as_ref().map(|a| a.span.clone()).unwrap_or(consequence.span.clone());
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::If { condition, consequence: consequence.clone(), alternative: alternative.clone() },
             span: start_span.start..end_span.end,
         }
@@ -971,6 +998,7 @@ impl<'a> Parser<'a> {
         let body = self.parse_block_statement();
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::While { condition, body: body.clone() },
             span: start_span.start..body.span.end,
         }
@@ -978,6 +1006,14 @@ impl<'a> Parser<'a> {
 
     fn parse_for_statement(&mut self) -> Statement {
         let start_span = self.cur_token.span.clone();
+        
+        let has_parens = if self.peek_token_is(TokenType::LParen) {
+            self.next_token();
+            true
+        } else {
+            false
+        };
+
         self.expect_peek(TokenType::Var);
         let variable = self.cur_token.literal.clone();
 
@@ -985,10 +1021,15 @@ impl<'a> Parser<'a> {
         self.next_token();
         let iterable = self.parse_expression(Precedence::Lowest);
 
+        if has_parens {
+            self.expect_peek(TokenType::RParen);
+        }
+
         self.expect_peek(TokenType::LBrace);
         let body = self.parse_block_statement();
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::For { variable, iterable, body: body.clone() },
             span: start_span.start..body.span.end,
         }
@@ -1007,6 +1048,7 @@ impl<'a> Parser<'a> {
         }
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Yield(value),
             span: start_span.start..self.cur_token.span.end,
         }
@@ -1035,6 +1077,7 @@ impl<'a> Parser<'a> {
 
         self.expect_peek(TokenType::RBrace);
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Enum { name, cases },
             span: start_span.start..self.cur_token.span.end,
         }
@@ -1049,6 +1092,7 @@ impl<'a> Parser<'a> {
         let body = self.parse_block_statement();
 
         Statement {
+            attributes: Vec::new(),
             kind: StatementKind::Test { name, body: body.clone() },
             span: start_span.start..body.span.end,
         }
@@ -1109,5 +1153,113 @@ impl<'a> Parser<'a> {
             label: Some(format!("expected {:?} here", t)),
             help: Some("Check for a missing delimiter, comma, semicolon, or closing bracket before this token.".into()),
         });
+    }
+
+    fn parse_sanitize_expression(&mut self, left: Expression) -> Expression {
+        let start_span = left.span.clone();
+        let precedence = Precedence::from(&self.cur_token.token_type);
+        self.next_token();
+        let right = self.parse_expression(precedence);
+
+        Expression {
+            kind: ExpressionKind::SanitizeExpression {
+                left: Box::new(left),
+                sanitizer: Box::new(right.clone()),
+            },
+            span: start_span.start..right.span.end,
+        }
+    }
+
+    fn parse_query_block_expression(&mut self) -> Expression {
+        let start_span = self.cur_token.span.clone();
+        
+        let mut db = None;
+        if self.peek_token_is(TokenType::LParen) {
+            self.next_token();
+            self.next_token();
+            db = Some(Box::new(self.parse_expression(Precedence::Lowest)));
+            self.expect_peek(TokenType::RParen);
+        }
+
+        self.expect_peek(TokenType::LBrace);
+        
+        let mut query = String::new();
+        let mut args = Vec::new();
+        
+        self.next_token();
+        while !self.cur_token_is(TokenType::RBrace) && !self.cur_token_is(TokenType::Eof) {
+            if self.cur_token_is(TokenType::Var) {
+                query.push('?');
+                args.push(Expression {
+                    kind: ExpressionKind::Variable(self.cur_token.literal.clone()),
+                    span: self.cur_token.span.clone(),
+                });
+            } else {
+                if !query.is_empty() { query.push(' '); }
+                query.push_str(&self.cur_token.literal);
+            }
+            self.next_token();
+        }
+
+        self.expect_peek(TokenType::RBrace);
+        Expression {
+            kind: ExpressionKind::QueryBlock {
+                db,
+                query: query.trim().to_string(),
+                args,
+            },
+            span: start_span.start..self.cur_token.span.end,
+        }
+    }
+
+    fn parse_route_statement(&mut self) -> Statement {
+        let start_span = self.cur_token.span.clone();
+        self.next_token();
+        
+        let method = self.cur_token.literal.clone();
+        self.next_token();
+        
+        let path = match &self.cur_token.token_type {
+            TokenType::Literal(s) => s.clone(),
+            _ => {
+                self.errors.push(ParserError {
+                    message: "expected path literal after route method".into(),
+                    span: self.cur_token.span.clone(),
+                    label: Some("expected string here".into()),
+                    help: Some("Paths must be string literals like \"/user/{$id}\".".into()),
+                });
+                "error".into()
+            }
+        };
+        
+        self.expect_peek(TokenType::Arrow);
+        self.expect_peek(TokenType::LBrace);
+        
+        let body = self.parse_block_statement();
+        
+        Statement {
+            attributes: Vec::new(),
+            kind: StatementKind::Route {
+                method,
+                path,
+                body: body.clone(),
+            },
+            span: start_span.start..body.span.end,
+        }
+    }
+
+    fn parse_import_statement(&mut self) -> Statement {
+        let start_span = self.cur_token.span.clone();
+        
+        self.expect_peek(TokenType::Literal("".into()));
+        let path = self.cur_token.literal.clone();
+        
+        self.expect_peek(TokenType::Semicolon);
+
+        Statement {
+            attributes: Vec::new(),
+            kind: StatementKind::Import(path),
+            span: start_span.start..self.cur_token.span.end,
+        }
     }
 }

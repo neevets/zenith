@@ -29,7 +29,7 @@
   High-performance parser, analyzer, and transpiler core.
 
 - **Modern Transpilation**  
-  Targets modern PHP 8.1+ features like `match`, `fn`, and `?->`.
+  Targets modern PHP 8.1+ features like `match`, `function`, and `?->`.
 
 - **Quantum Shield**  
   Strict static type system that eliminates runtime type errors.
@@ -50,7 +50,7 @@
 ## Quick Install (Linux & macOS)
 
 ```bash
-curl -fsS https://dl.zenith.vercel.app/install.sh | sh
+curl -fsS https://dl.zenithlang.xyz/install.sh | sh
 ```
 
 ## Build from Source

@@ -77,6 +77,15 @@ pub enum ExpressionKind {
         table: Option<String>,
         columns: Vec<String>,
     },
+    QueryBlock {
+        db: Option<Box<Expression>>,
+        query: String,
+        args: Vec<Expression>,
+    },
+    SanitizeExpression {
+        left: Box<Expression>,
+        sanitizer: Box<Expression>,
+    },
     StructLiteral {
         name: String,
         fields: Vec<(String, Expression)>,
@@ -110,6 +119,7 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone)]
 pub struct Statement {
+    pub attributes: Vec<Attribute>,
     pub kind: StatementKind,
     pub span: Span,
 }
@@ -152,6 +162,7 @@ pub enum StatementKind {
     },
     Struct {
         name: String,
+        parent: Option<String>,
         fields: Vec<StructField>,
     },
     Yield(Option<Expression>),
@@ -159,7 +170,25 @@ pub enum StatementKind {
         name: String,
         body: BlockStatement,
     },
+    Route {
+        method: String,
+        path: String,
+        body: BlockStatement,
+    },
     Middleware(BlockStatement),
+}
+
+#[derive(Debug, Clone)]
+pub struct Attribute {
+    pub name: String,
+    pub arguments: Vec<Expression>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttributedStatement {
+    pub attributes: Vec<Attribute>,
+    pub statement: Statement,
 }
 
 #[derive(Debug, Clone)]

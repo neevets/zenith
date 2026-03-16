@@ -1,4 +1,4 @@
-import "test/stdlib_test.zen"
+import "tests/stdlib_test.zen";
 
 print("\n--- Zenith Master Test Suite ---\n");
 print("Verification complete.\n");

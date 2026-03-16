@@ -10,10 +10,8 @@ We welcome contributions from the community to help improve the language, toolin
 2. [Ways to Contribute](#ways-to-contribute)
 3. [Getting Started](#getting-started)
 4. [Development Setup](#development-setup)
-5. [Project Structure](#project-structure)
-6. [Coding Guidelines](#coding-guidelines)
-7. [Commit Guidelines](#commit-guidelines)
-8. [Pull Request Process](#pull-request-process)
+5. [Commit Guidelines](#commit-guidelines)
+6. [Pull Request Process](#pull-request-process)
 
 ---
 

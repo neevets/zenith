@@ -14,4 +14,4 @@ Simply open any `.zen` file to get started.
 
 ## More Information
 
-For more information about Zenith, visit [zenithlang.vercel.app](https://zenithlang.vercel.app).
+For more information about Zenith, visit [zenithlang.xyz](https://zenithlang.xyz).
