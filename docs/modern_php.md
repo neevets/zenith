@@ -1,4 +1,4 @@
-# Zenith & Modern PHP (8.1+)
+# Modern PHP (8.1+)
 
 Zenith is not just a language; it's a compiler designed to maximize the potential of modern PHP runtimes.
 
