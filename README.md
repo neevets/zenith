@@ -2,7 +2,9 @@
 
 <img src="assets/zen-logo.png" width="200" alt="Zenith Logo" />
 
-<a href="https://zenith-lang.org"><h1>Zenith</h1></a>
+<h1>
+  <a href="https://zenith-lang.org">Zenith</a>
+</h1>
 
 </div>
 

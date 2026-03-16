@@ -70,12 +70,6 @@ Build the project:
 cargo build
 ```
 
-Run tests:
-
-```bash
-cargo test
-```
-
 Run the CLI locally:
 
 ```bash

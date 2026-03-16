@@ -33,6 +33,6 @@ Under no circumstances will we tolerate:
 Zenith maintainers have the authority and responsibility to remove or edit any comments, code, or contributions that do not comply with these guidelines.
 
 **Have you seen something inappropriate?**  
-Please report it directly to: **conduct@zenith-lang.org**.
+Please report it directly to: **conduct@zenith-lang.org**
 
 Every report will be reviewed confidentially, promptly, and fairly to ensure the community remains an excellent place to build the future of programming.
