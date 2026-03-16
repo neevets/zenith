@@ -2,7 +2,7 @@
 
 <img src="assets/zen-logo.png" width="200" alt="Zenith Logo" />
 
-<a href="https://zenithlang.vercel.app"><h1>Zenith</h1></a>
+<a href="https://zenith-lang.org"><h1>Zenith</h1></a>
 
 </div>
 
