@@ -217,7 +217,7 @@ main() {
     if [ "$platform" = "windows" ]; then
         candidates="zenith-windows-${arch}.tar.gz zenith-windows-x86_64.tar.gz"
     elif [ "$platform" = "linux" ]; then
-        candidates="zenith-linux-${arch}.tar.gz zenith-linux-x86_64.tar.gz"
+        candidates="zenith-linux-${arch}-static.tar.gz zenith-linux-x86_64-static.tar.gz zenith-linux-${arch}.tar.gz zenith-linux-x86_64.tar.gz"
     else
         candidates="zenith-macos-${arch}.tar.gz zenith-macos-arm64.tar.gz"
     fi
@@ -239,10 +239,8 @@ main() {
         exit 1
     fi
 
-    local final_url="https://github.com/${ZENITH_REPO}/releases/latest/download/${selected}"
     say "target: $target"
-    say "downloading: $final_url"
-    ensure downloader "$final_url" "$ZENITH_TMP_DIR/zenith.tar.gz" "$target"
+    say "downloading: $selected"
     ensure tar -xzf "$ZENITH_TMP_DIR/zenith.tar.gz" -C "$ZENITH_TMP_DIR"
 
     local source_bin
@@ -283,6 +281,7 @@ main() {
     fi
 
     say "installed: $dest"
+    say "run: zenith --version"
 }
 
 main "$@"

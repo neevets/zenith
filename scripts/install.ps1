@@ -23,7 +23,7 @@ Usage: .\install.ps1 [OPTIONS]
 Options:
   -q, --quiet        Reduce output
   -y                 Skip confirmation prompt
-  --to <DIR>         Install directory
+      --to <DIR>     Install directory
   -h, --help         Show this help
 "@
 }
@@ -128,7 +128,7 @@ function Main {
         Say "PATH updated."
     }
 
-    Say "run: zenith --help"
+    Say "run: zenith --version"
 }
 
 Main $args
