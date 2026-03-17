@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 
 pub struct Options {
     pub allow_read: bool,
-    pub allow_net: bool, 
+    pub allow_net: bool,
     pub allow_env: bool,
 }
 

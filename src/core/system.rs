@@ -78,8 +78,9 @@ pub fn ensure_php() -> anyhow::Result<String> {
         {
             if entry.file_name() == "php" || entry.file_name() == "php.exe" {
                 if entry.path().is_file() {
-                    if p.to_string_lossy().contains("/bin/") {
-                        found_path = Some(p);
+                    let path = entry.path().to_owned();
+                    if path.to_string_lossy().contains("/bin/") {
+                        found_path = Some(path);
                         break;
                     }
                 }
