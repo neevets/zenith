@@ -1,4 +1,4 @@
-# Modern PHP (8.1+)
+# Modern PHP (8.5+)
 
 Zenith is not just a language; it's a compiler designed to maximize the potential of modern PHP runtimes.
 
@@ -28,4 +28,4 @@ let $name = $user?->profile?->getName();
 (Internal Implementation) Zenith's class system (forthcoming) will leverage PHP 8.0 property promotion to minimize boilerplate.
 
 ## Fiber Support (Experimental)
-Zenith is exploring native asynchronous abstractions using PHP 8.1 Fibers, allowing for concurrent "green thread" execution without the complexity of traditional async/await.
+Zenith is exploring native asynchronous abstractions using PHP 8.5 Fibers, allowing for concurrent "green thread" execution without the complexity of traditional async/await.

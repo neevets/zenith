@@ -82,7 +82,7 @@ struct Product {
 ```
 
 ## 5. Concurrency Model: Fibers & Spawn
-Zenith abstracts PHP 8.1+ Fibers into high-level concurrency blocks.
+Zenith abstracts PHP 8.5+ Fibers into high-level concurrency blocks.
 ```zenith
 let $task = spawn {
     println("Task started");

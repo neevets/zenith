@@ -37,3 +37,22 @@ let $shout = fn($name: string): string => strtoupper($name);
 
 ## High-Order Functions
 Since Zenith transpiles to PHP, any standard PHP high-order function (like `array_map`, `array_filter`) can be used seamlessly with Zenith's arrow functions.
+
+
+## Regex on Strings (fully functional)
+Zenith supports regex operations directly over strings without mockups. These helpers transpile to robust PHP `preg_*` calls.
+
+### Available methods
+- `$text.regex_match(pattern, flags?) -> bool`
+- `$text.regex_replace(pattern, replacement, limit?) -> string`
+- `$text.regex_capture(pattern, group?) -> string|null`
+- `$text.regex_capture_all(pattern, group?) -> array`
+
+### Example
+```zenith
+let $line = "user=alice id=42";
+let $ok = $line.regex_match("id=\d+");
+let $id = $line.regex_capture("id=(\d+)", 1);
+let $allDigits = $line.regex_capture_all("(\d)", 1);
+let $masked = $line.regex_replace("alice", "***");
+```
