@@ -281,6 +281,7 @@ main() {
     fi
 
     say "installed: $dest"
+    say "run: zenith --version"
 }
 
 main "$@"
