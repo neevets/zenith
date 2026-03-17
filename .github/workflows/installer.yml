@@ -29,24 +29,32 @@ jobs:
       - name: Prepare Pages artifact
         run: |
           mkdir -p public
-          # Copiamos ambos instaladores (asumiendo que están en scripts/)
+          
+          # Copiamos instaladores
           cp scripts/install.sh public/install.sh
           cp scripts/install.ps1 public/install.ps1
           chmod +x public/install.sh
           
-          # Generamos el index.html con las rutas dinámicas
-          cat > public/index.html <<'HTML'
+          cp assets/zen-logo.png public/favicon.png || true
+
+          USER_NAME="${{ github.repository_owner }}"
+          REPO_NAME="${{ github.event.repository.name }}"
+          BASE_URL="https://${USER_NAME,,}.github.io/${REPO_NAME,,}/"
+
+          cat > public/index.html <<HTML
           <!doctype html>
           <html lang="en">
             <head>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1" />
               <title>Zenith Installer</title>
-              <link rel="icon" type="image/png" href="./assets/zen-logo.png">
+              <link rel="icon" type="image/png" href="favicon.png">
               <style>
-                body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f4f9; }
-                pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
-                h1 { color: #333; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; background: #0d1117; color: #c9d1d9; }
+                pre { background: #161b22; color: #58a6ff; padding: 15px; border-radius: 6px; border: 1px solid #30363d; overflow-x: auto; }
+                h1 { color: #f0f6fc; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+                h3 { color: #8b949e; }
+                code { color: #ff7b72; }
               </style>
             </head>
             <body>
@@ -54,10 +62,10 @@ jobs:
               <p>The installer auto-detects the architecture and installs the latest stable release.</p>
               
               <h3>Linux / MacOS</h3>
-              <pre>curl -fsSL ${{ steps.deployment.outputs.page_url }}install.sh | sh -s -- -y</pre>
+              <pre>curl -fsSL ${BASE_URL}install.sh | sh -s -- -y</pre>
               
               <h3>Windows (PowerShell)</h3>
-              <pre>iwr -useb ${{ steps.deployment.outputs.page_url }}install.ps1 | iex</pre>
+              <pre>iwr -useb ${BASE_URL}install.ps1 | iex</pre>
             </body>
           </html>
           HTML
