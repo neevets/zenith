@@ -147,6 +147,7 @@ impl<'a> Parser<'a> {
             TokenType::Struct => Some(self.parse_struct_definition()),
             TokenType::Route => Some(self.parse_route_statement()),
             TokenType::Try => Some(self.parse_try_statement()),
+            TokenType::Spawn => Some(self.parse_expression_statement()),
             TokenType::At => {
                 self.next_token();
                 if self.cur_token.literal == "memoize" {
@@ -214,7 +215,12 @@ impl<'a> Parser<'a> {
 
     fn parse_let_statement(&mut self) -> Statement {
         let start_span = self.cur_token.span.clone();
-        self.expect_peek(TokenType::Var);
+        if self.peek_token_is(TokenType::Var) || self.peek_token_is(TokenType::Ident) {
+            self.next_token();
+        } else {
+             // force error if neither
+             self.expect_peek(TokenType::Var);
+        }
         let name = self.cur_token.literal.clone();
 
         let mut var_type = None;
@@ -271,6 +277,10 @@ impl<'a> Parser<'a> {
             self.next_token();
             self.expect_peek(TokenType::Ident);
             parent = Some(self.cur_token.literal.clone());
+        } else if self.peek_token_is(TokenType::Ident) && self.peek_token.literal == "extends" {
+            self.next_token(); // consume "extends"
+            self.expect_peek(TokenType::Ident);
+            parent = Some(self.cur_token.literal.clone());
         }
 
         self.expect_peek(TokenType::LBrace);
@@ -286,8 +296,20 @@ impl<'a> Parser<'a> {
                 self.next_token();
             }
 
-            let field_name = self.cur_token.literal.clone();
+            let is_type_token = matches!(self.cur_token.token_type, 
+                TokenType::Ident | TokenType::IntType | TokenType::StringType | 
+                TokenType::BoolType | TokenType::FloatType | TokenType::AnyType | TokenType::VoidType);
+
+            let field_name;
             let mut field_type = None;
+
+            if is_type_token && (self.peek_token_is(TokenType::Ident) || self.peek_token_is(TokenType::Var)) {
+                field_type = Some(self.cur_token.literal.clone());
+                self.next_token();
+                field_name = self.cur_token.literal.clone();
+            } else {
+                field_name = self.cur_token.literal.clone();
+            }
 
             if self.peek_token_is(TokenType::Colon) {
                 self.next_token();
@@ -844,10 +866,16 @@ impl<'a> Parser<'a> {
                 span: start_span,
             },
             TokenType::Ident | TokenType::Var => {
-                let name = start_token.literal.clone();
+                let mut name = start_token.literal.clone();
+                while self.peek_token_is(TokenType::Dot) {
+                    self.next_token(); // cur is .
+                    self.expect_peek(TokenType::Ident); // cur is next part
+                    name.push('.');
+                    name.push_str(&self.cur_token.literal);
+                }
                 if self.peek_token_is(TokenType::LBrace) {
                     self.next_token();
-                    self.next_token();
+                    self.next_token(); // move to first field name
                     let mut fields = Vec::new();
                     while !self.cur_token_is(TokenType::RBrace)
                         && !self.cur_token_is(TokenType::Eof)
@@ -860,10 +888,14 @@ impl<'a> Parser<'a> {
                         self.expect_peek(TokenType::Colon);
                         self.next_token();
                         fields.push((field_name, self.parse_pattern()));
+                        
+                        // After parse_pattern, cur_token is the last token of that pattern.
                         if self.peek_token_is(TokenType::Comma) {
-                            self.next_token();
+                            self.next_token(); // move to comma
+                            self.next_token(); // move to next field
+                        } else {
+                            self.next_token(); // move to RBrace or whatever is next
                         }
-                        self.next_token();
                     }
                     Pattern {
                         kind: PatternKind::Struct { name, fields },
@@ -874,6 +906,24 @@ impl<'a> Parser<'a> {
                         kind: PatternKind::Identifier(name),
                         span: start_span,
                     }
+                }
+            }
+            TokenType::LBracket => {
+                self.next_token();
+                let mut elements = Vec::new();
+                while !self.cur_token_is(TokenType::RBracket) && !self.cur_token_is(TokenType::Eof) {
+                    elements.push(self.parse_pattern());
+                    if self.peek_token_is(TokenType::Comma) {
+                        self.next_token();
+                    }
+                    self.next_token();
+                }
+                Pattern {
+                    kind: PatternKind::Struct { 
+                        name: "array".into(), 
+                        fields: elements.into_iter().enumerate().map(|(i, p)| (i.to_string(), p)).collect() 
+                    },
+                    span: start_span.start..self.cur_token.span.end,
                 }
             }
             _ => {
@@ -1045,12 +1095,24 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_parameter(&mut self) -> Parameter {
+        let mut param_type = None;
         let mut is_var = false;
-        if self.cur_token_is(TokenType::Var) {
+
+        // Support: Type $var, $var, or name
+        // A "Type" can be an Ident or a built-in type token.
+        let is_type_token = matches!(self.cur_token.token_type, 
+            TokenType::Ident | TokenType::IntType | TokenType::StringType | 
+            TokenType::BoolType | TokenType::FloatType | TokenType::AnyType | TokenType::VoidType);
+
+        if is_type_token && self.peek_token_is(TokenType::Var) {
+            param_type = Some(self.cur_token.literal.clone());
+            self.next_token();
+            is_var = true;
+        } else if self.cur_token_is(TokenType::Var) {
             is_var = true;
         }
+
         let name = self.cur_token.literal.clone();
-        let mut param_type = None;
 
         if self.peek_token_is(TokenType::Colon) {
             self.next_token();
@@ -1401,8 +1463,8 @@ impl<'a> Parser<'a> {
         let mut query = String::new();
         let mut args = Vec::new();
 
-        self.next_token();
-        while !self.cur_token_is(TokenType::RBrace) && !self.cur_token_is(TokenType::Eof) {
+        while !self.peek_token_is(TokenType::RBrace) && !self.peek_token_is(TokenType::Eof) {
+            self.next_token();
             if self.cur_token_is(TokenType::Var) {
                 query.push('?');
                 args.push(Expression {
@@ -1415,8 +1477,9 @@ impl<'a> Parser<'a> {
                 }
                 query.push_str(&self.cur_token.literal);
             }
-            self.next_token();
         }
+
+        self.expect_peek(TokenType::RBrace);
 
         Expression {
             kind: ExpressionKind::QueryBlock {
@@ -1470,7 +1533,9 @@ impl<'a> Parser<'a> {
         self.expect_peek(TokenType::Literal("".into()));
         let path = self.cur_token.literal.clone();
 
-        self.expect_peek(TokenType::Semicolon);
+        if self.peek_token_is(TokenType::Semicolon) {
+            self.next_token();
+        }
 
         Statement {
             attributes: Vec::new(),

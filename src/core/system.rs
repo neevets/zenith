@@ -5,8 +5,8 @@ use std::io::Cursor;
 use std::process::Command;
 use tar::Archive;
 
-const PHP_VERSION: &str = "8.5.0";
-const BASE_URL: &str = "https://github.com/shivammathur/php-bin/releases/download/";
+const PHP_VERSION: &str = "8.4";
+const BASE_URL: &str = "https://github.com/pmmp/PHP-Binaries/releases/download/pm5-php-8.4-latest/";
 
 pub fn ensure_php() -> anyhow::Result<String> {
     if let Ok(path) = which::which("php") {
@@ -66,10 +66,43 @@ pub fn ensure_php() -> anyhow::Result<String> {
     archive.unpack(&local_bin)?;
 
     if !local_php.exists() {
-        return Err(anyhow::anyhow!(
-            "Extraction succeeded but binary not found at {:?}",
-            local_php
-        ));
+        println!("Binary not found at expected path, searching recursively...");
+        let mut found_path = None;
+        for entry in walkdir::WalkDir::new(&local_bin)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_name() == "php" || entry.file_name() == "php.exe" {
+                if entry.path().is_file() {
+                    let p = entry.path().to_path_buf();
+                    // Basic sanity check to ensure it's the right one (PMMP binaries are in a bin dir)
+                    if p.to_string_lossy().contains("/bin/") {
+                         found_path = Some(p);
+                         break;
+                    }
+                }
+            }
+        }
+
+        if let Some(path) = found_path {
+            println!("Found PHP binary at {:?}", path);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&path, perms)?;
+                
+                // Create a symlink at the expected local_php location
+                let _ = std::os::unix::fs::symlink(&path, &local_php);
+            }
+            return Ok(path.to_string_lossy().to_string());
+        } else {
+            return Err(anyhow::anyhow!(
+                "Extraction succeeded but binary 'php' not found in {:?}",
+                local_bin
+            ));
+        }
     }
 
     #[cfg(unix)]
@@ -84,20 +117,27 @@ pub fn ensure_php() -> anyhow::Result<String> {
 }
 
 fn get_download_url() -> anyhow::Result<String> {
-    let os_name = match env::consts::OS {
-        "linux" => "linux",
-        "macos" => "macos",
-        "windows" => "win",
+    let (os_name, ext) = match env::consts::OS {
+        "linux" => ("Linux", "tar.gz"),
+        "macos" => ("macOS", "tar.gz"),
+        "windows" => ("Windows", "zip"),
         _ => return Err(anyhow::anyhow!("Unsupported OS: {}", env::consts::OS)),
     };
 
+    let arch = match env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        _ => return Err(anyhow::anyhow!("Unsupported Architecture: {}", env::consts::ARCH)),
+    };
+
+    // PMMP Format: PHP-8.4-Linux-x86_64-PM5.tar.gz
     Ok(format!(
-        "{}{}/php-{}-{}-{}.tar.gz",
+        "{}PHP-{}-{}-{}-PM5.{}",
         BASE_URL,
         PHP_VERSION,
-        PHP_VERSION,
         os_name,
-        env::consts::ARCH
+        arch,
+        ext
     ))
 }
 

@@ -3,15 +3,15 @@ use crate::core::ast::{
     BlockStatement, Expression, ExpressionKind, Parameter, Program, Statement, StatementKind,
 };
 use regex::Regex;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub struct Transpiler {
     pub lc_map: Option<LifeCycleMap>,
-    pub module_map: HashMap<String, String>,
+    pub module_map: FxHashMap<String, String>,
     pub top_level_vars: Vec<String>,
     pub is_test_mode: bool,
     pub test_blocks: Vec<(String, String)>,
-    pub inline_candidates: HashMap<String, (Vec<Parameter>, Expression)>,
+    pub inline_candidates: FxHashMap<String, (Vec<Parameter>, Expression)>,
     pub is_in_memoized_function: bool,
     pub current_memo_cache: Option<String>,
     pub current_memo_key: Option<String>,
@@ -23,11 +23,11 @@ impl Transpiler {
     pub fn new() -> Self {
         Transpiler {
             lc_map: None,
-            module_map: HashMap::new(),
+            module_map: FxHashMap::default(),
             top_level_vars: Vec::new(),
             is_test_mode: false,
             test_blocks: Vec::new(),
-            inline_candidates: HashMap::new(),
+            inline_candidates: FxHashMap::default(),
             is_in_memoized_function: false,
             current_memo_cache: None,
             current_memo_key: None,
@@ -36,7 +36,16 @@ impl Transpiler {
         }
     }
 
-    pub fn set_module_map(&mut self, map: HashMap<String, String>) {
+    fn render_template(&self, template: &str, replacements: FxHashMap<&str, String>) -> String {
+        let mut result = template.to_string();
+        for (key, value) in replacements {
+            let placeholder = format!("{{{{{}}}}}", key);
+            result = result.replace(&placeholder, &value);
+        }
+        result
+    }
+
+    pub fn set_module_map(&mut self, map: FxHashMap<String, String>) {
         self.module_map = map;
     }
 
@@ -163,22 +172,24 @@ impl Transpiler {
                 consequence,
                 alternative,
             } => {
-                let mut out = format!("if ({}) {{\n", self.transpile_expression(condition));
-                out.push_str(&self.transpile_block(consequence));
-                out.push_str("}");
+                let mut replacements = FxHashMap::default();
+                replacements.insert("cond", self.transpile_expression(condition));
+                replacements.insert("then", self.transpile_block(consequence));
+
+                let mut out = self.render_template("if ({{cond}}) {\n{{then}}}", replacements);
+
                 if let Some(alt) = alternative {
-                    out.push_str(" else {\n");
-                    out.push_str(&self.transpile_block(alt));
-                    out.push_str("}");
+                    let mut alt_replacements = FxHashMap::default();
+                    alt_replacements.insert("else_body", self.transpile_block(alt));
+                    out.push_str(&self.render_template(" else {\n{{else_body}}}", alt_replacements));
                 }
                 out
             }
             StatementKind::While { condition, body } => {
-                format!(
-                    "while ({}) {{\n{}}}",
-                    self.transpile_expression(condition),
-                    self.transpile_block(body)
-                )
+                let mut replacements = FxHashMap::default();
+                replacements.insert("cond", self.transpile_expression(condition));
+                replacements.insert("body", self.transpile_block(body));
+                self.render_template("while ({{cond}}) {\n{{body}}}", replacements)
             }
             StatementKind::For {
                 variable,
@@ -190,12 +201,11 @@ impl Transpiler {
                 } else {
                     format!("${}", variable)
                 };
-                format!(
-                    "foreach ({} as {}) {{\n{}}}",
-                    self.transpile_expression(iterable),
-                    clean_var,
-                    self.transpile_block(body)
-                )
+                let mut replacements = FxHashMap::default();
+                replacements.insert("iterable", self.transpile_expression(iterable));
+                replacements.insert("var", clean_var);
+                replacements.insert("body", self.transpile_block(body));
+                self.render_template("foreach ({{iterable}} as {{var}}) {\n{{body}}}", replacements)
             }
             StatementKind::FunctionDefinition {
                 name,
@@ -206,43 +216,70 @@ impl Transpiler {
                 ..
             } => self.transpile_function(name, parameters, body, *is_render, *is_memoized),
             StatementKind::Enum { name, cases } => {
-                let mut out = format!("enum {} {{\n", name);
+                let mut cases_code = String::new();
                 for case in cases {
-                    out.push_str(&format!("    case {};\n", case.name));
+                    let mut case_replacements = FxHashMap::default();
+                    case_replacements.insert("name", case.name.clone());
+                    cases_code.push_str(
+                        &self.render_template("    case {{name}};\n", case_replacements),
+                    );
                 }
-                out.push_str("}");
-                out
+                let mut replacements = FxHashMap::default();
+                replacements.insert("name", name.to_string());
+                replacements.insert("cases", cases_code);
+                self.render_template("enum {{name}} {\n{{cases}}}", replacements)
             }
             StatementKind::Struct {
                 name,
                 parent,
                 fields,
             } => {
-                let mut out = format!("class {}", name);
+                let mut replacements = FxHashMap::default();
+                replacements.insert("name", name.to_string());
+
+                let mut extends_line = String::new();
                 if let Some(p) = parent {
-                    out.push_str(&format!(" extends {}", p));
+                    let mut parent_replacements = FxHashMap::default();
+                    parent_replacements.insert("parent", p.to_string());
+                    extends_line = self.render_template(" extends {{parent}}", parent_replacements);
                 }
-                out.push_str(" {\n");
+                replacements.insert("extends", extends_line);
+
+                let mut constructor = String::new();
                 if !fields.is_empty() || parent.is_none() {
-                    out.push_str("    public function __construct(\n");
-                    for (i, field) in fields.iter().enumerate() {
+                    let mut fields_code: Vec<String> = Vec::new();
+                    for field in fields {
                         let php_type = self.map_type(field.field_type.as_deref());
                         let type_hint = if php_type.is_empty() {
                             "".into()
                         } else {
                             format!("{} ", php_type)
                         };
-                        out.push_str(&format!(
-                            "        public {}{}{}",
-                            type_hint,
-                            field.name,
-                            if i < fields.len() - 1 { ",\n" } else { "" }
-                        ));
+                        let mut field_replacements = FxHashMap::default();
+                        field_replacements.insert("type", type_hint);
+                        let clean_field_name = if field.name.starts_with('$') {
+                            field.name.clone()
+                        } else {
+                            format!("${}", field.name)
+                        };
+                        field_replacements.insert("name", clean_field_name);
+                        fields_code.push(
+                            self.render_template("        public {{type}}{{name}}", field_replacements),
+                        );
                     }
-                    out.push_str("\n    ) {}\n");
+                    let mut constructor_replacements = FxHashMap::default();
+                    constructor_replacements.insert("fields", fields_code.join(",\n"));
+                    constructor = self.render_template(
+                        "    public function __construct(\n{{fields}}\n    ) {}",
+                        constructor_replacements,
+                    );
                 }
-                out.push_str("}");
-                out
+                replacements.insert("constructor", constructor);
+
+                self.render_template(
+                    "class {{name}}{{extends}} {\n{{constructor}}\n}",
+                    replacements,
+                )
             }
             StatementKind::Yield(value) => {
                 if let Some(v) = value {
@@ -359,7 +396,7 @@ impl Transpiler {
                 } else if name == "json" {
                     "json".into()
                 } else {
-                    name.replace('.', "\\")
+                    name.replace('.', "::")
                 }
             }
             ExpressionKind::Variable(name) => name.clone(),
@@ -427,8 +464,10 @@ impl Transpiler {
                     return format!("{}\"{}\"", left_s, &right_s[1..]);
                 }
 
-                if operator == "+" || operator == "-" || operator == "*" || operator == "/" {
-                    format!("{} {} {}", left_s, op, right_s)
+                let is_arithmetic = matches!(operator.as_str(), "+" | "-" | "*" | "/");
+                if is_arithmetic {
+                    let php_op = if operator == "+" { "." } else { operator.as_str() };
+                    format!("{} {} {}", left_s, php_op, right_s)
                 } else {
                     format!("({} {} {})", left_s, op, right_s)
                 }
@@ -583,41 +622,58 @@ impl Transpiler {
                     self.transpile_expression(right)
                 )
             }
-            ExpressionKind::SpawnExpression { body } => match &body.kind {
-                StatementKind::Expression(Expression {
-                    kind:
-                        ExpressionKind::CallExpression {
-                            function,
-                            arguments,
-                        },
-                    ..
-                }) => {
-                    let func_s = self.transpile_expression(function);
-                    let args: Vec<String> = arguments
-                        .iter()
-                        .map(|arg| self.transpile_expression(arg))
-                        .collect();
-                    format!(
-                        "new Fiber(function() use ($file, $db, $ctx, $env) {{ {}({}); }})",
-                        func_s,
-                        args.join(", ")
-                    )
+            ExpressionKind::SpawnExpression { body } => {
+                let mut replacements = FxHashMap::default();
+                replacements.insert("file", "$file".to_string());
+                replacements.insert("db", "$db".to_string());
+                replacements.insert("ctx", "$ctx".to_string());
+                replacements.insert("env", "$env".to_string());
+
+                match &body.kind {
+                    StatementKind::Expression(Expression {
+                        kind:
+                            ExpressionKind::CallExpression {
+                                function,
+                                arguments,
+                            },
+                        ..
+                    }) => {
+                        replacements.insert("func", self.transpile_expression(function));
+                        replacements.insert(
+                            "args",
+                            arguments
+                                .iter()
+                                .map(|arg| self.transpile_expression(arg))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        );
+                        self.render_template(
+                            "new Fiber(function() use ({{file}}, {{db}}, {{ctx}}, {{env}}) { {{func}}({{args}}); })",
+                            replacements,
+                        )
+                    }
+                    StatementKind::Expression(Expression {
+                        kind: ExpressionKind::Identifier(name),
+                        ..
+                    }) => {
+                        replacements.insert(
+                            "func",
+                            self.transpile_expression(&Expression {
+                                kind: ExpressionKind::Identifier(name.clone()),
+                                span: body.span.clone(),
+                            }),
+                        );
+                        self.render_template("new Fiber({{func}})", replacements)
+                    }
+                    _ => {
+                        replacements.insert("body", self.transpile_statement(body));
+                        self.render_template(
+                            "new Fiber(function() use ({{file}}, {{db}}, {{ctx}}, {{env}}) {\n{{body}}})",
+                            replacements,
+                        )
+                    }
                 }
-                StatementKind::Expression(Expression {
-                    kind: ExpressionKind::Identifier(name),
-                    ..
-                }) => {
-                    let func_s = self.transpile_expression(&Expression {
-                        kind: ExpressionKind::Identifier(name.clone()),
-                        span: body.span.clone(),
-                    });
-                    format!("new Fiber({})", func_s)
-                }
-                _ => format!(
-                    "new Fiber(function() use ($file, $db, $ctx, $env) {{\n{}}})",
-                    self.transpile_statement(body)
-                ),
-            },
+            }
             ExpressionKind::AssignExpression { left, value } => {
                 format!(
                     "{} = {}",
@@ -647,7 +703,9 @@ impl Transpiler {
                 format!("new {}(...[{}])", name.replace('.', "\\"), fds.join(", "))
             }
             ExpressionKind::Block(block) => {
-                format!("(function() {{\n{}    }})()", self.transpile_block(block))
+                let mut replacements = FxHashMap::default();
+                replacements.insert("body", self.transpile_block(block));
+                self.render_template("(function() {\n{{body}}    })()", replacements)
             }
             ExpressionKind::QueryBlock { db, query, args } => {
                 let q = query.replace("==", "=");
@@ -688,8 +746,8 @@ impl Transpiler {
         self.current_used_vars.clear();
         let body_out = self.transpile_block(body);
 
-        let mut out = String::from("function ");
-        out.push_str(name);
+        let mut replacements = FxHashMap::default();
+        replacements.insert("name", name.to_string());
 
         let params: Vec<String> = parameters
             .iter()
@@ -706,8 +764,9 @@ impl Transpiler {
                 )
             })
             .collect();
-        out.push_str(&format!("({}) {{\n", params.join(", ")));
+        replacements.insert("params", params.join(", "));
 
+        let mut globals_line = String::new();
         let mut globals = Vec::new();
         if self.current_used_vars.contains("file") {
             globals.push("$file");
@@ -723,22 +782,27 @@ impl Transpiler {
         }
 
         if !globals.is_empty() {
-            out.push_str(&format!("    global {};\n", globals.join(", ")));
+            globals_line = format!("    global {};\n", globals.join(", "));
         }
+        replacements.insert("globals", globals_line);
 
+        let mut memo_line = String::new();
         if is_memoized {
-            out.push_str("    static $memo_cache = [];\n");
             let keys: Vec<String> = parameters.iter().map(|p| p.name.clone()).collect();
-            out.push_str(&format!(
-                "    $memo_key = md5(json_encode([{}]));\n",
-                keys.join(", ")
-            ));
-            out.push_str("    if (isset($memo_cache[$memo_key])) return $memo_cache[$memo_key];\n");
+            let mut memo_replacements = FxHashMap::default();
+            memo_replacements.insert("keys", keys.join(", "));
+            memo_line = self.render_template(
+                "    static $memo_cache = [];\n    $memo_key = md5(json_encode([{{keys}}]));\n    if (isset($memo_cache[$memo_key])) return $memo_cache[$memo_key];\n",
+                memo_replacements,
+            );
         }
+        replacements.insert("memo", memo_line);
+        replacements.insert("body", body_out);
 
-        out.push_str(&body_out);
-        out.push_str("}");
-        out
+        self.render_template(
+            "function {{name}}({{params}}) {\n{{globals}}{{memo}}{{body}}}",
+            replacements,
+        )
     }
 
     fn transpile_match_expression(
@@ -747,13 +811,16 @@ impl Transpiler {
         arms: &[crate::core::ast::MatchArm],
     ) -> String {
         let cond_val = "$match_val";
-        let mut out = String::from("(function($match_val) {\n");
+        let mut arm_code = String::new();
 
         for arm in arms {
             if arm.is_default {
-                out.push_str("    return ");
-                out.push_str(&self.transpile_expression(&arm.result));
-                out.push_str(";\n");
+                let mut default_replacements = FxHashMap::default();
+                default_replacements.insert("result", self.transpile_expression(&arm.result));
+                arm_code.push_str(&self.render_template(
+                    "    return {{result}};\n",
+                    default_replacements,
+                ));
             } else {
                 let mut condition_checks = Vec::new();
                 let mut variable_bindings = Vec::new();
@@ -764,21 +831,33 @@ impl Transpiler {
                     variable_bindings.push(bindings);
                 }
 
-                out.push_str(&format!("    if ({}) {{\n", condition_checks.join(" || ")));
+                let mut arm_replacements = FxHashMap::default();
+                arm_replacements.insert("check", condition_checks.join(" || "));
+                
+                let mut bindings_code = String::new();
                 if !variable_bindings.is_empty() {
                     for binding in &variable_bindings[0] {
-                        out.push_str(&format!("        {};\n", binding));
+                        bindings_code.push_str(&format!("        {};\n", binding));
                     }
                 }
-                out.push_str("        return ");
-                out.push_str(&self.transpile_expression(&arm.result));
-                out.push_str(";\n");
-                out.push_str("    }\n");
+                arm_replacements.insert("bindings", bindings_code);
+                arm_replacements.insert("result", self.transpile_expression(&arm.result));
+
+                arm_code.push_str(&self.render_template(
+                    "    if ({{check}}) {\n{{bindings}}        return {{result}};\n    }\n",
+                    arm_replacements,
+                ));
             }
         }
-        out.push_str("    return null;\n");
-        out.push_str(&format!("}})({})", self.transpile_expression(condition)));
-        out
+
+        let mut final_replacements = FxHashMap::default();
+        final_replacements.insert("cond", self.transpile_expression(condition));
+        final_replacements.insert("arms", arm_code);
+
+        self.render_template(
+            "(function($match_val) {\n{{arms}}    return null;\n})({{cond}})",
+            final_replacements,
+        )
     }
 
     fn transpile_pattern_data(

@@ -7,7 +7,7 @@ use crate::core::parser::Parser;
 use crate::core::system;
 use colored::Colorize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -29,17 +29,17 @@ impl Engine {
     }
 
     pub fn transpile(&self, filename: &str) -> anyhow::Result<String> {
-        self.transpile_recursive(filename, &mut HashMap::new(), false)
+        self.transpile_recursive(filename, &mut FxHashMap::default(), false)
     }
 
     pub fn transpile_test(&self, filename: &str) -> anyhow::Result<String> {
-        self.transpile_recursive(filename, &mut HashMap::new(), true)
+        self.transpile_recursive(filename, &mut FxHashMap::default(), true)
     }
 
     fn transpile_recursive(
         &self,
         filename: &str,
-        module_map: &mut HashMap<String, String>,
+        module_map: &mut FxHashMap<String, String>,
         is_test: bool,
     ) -> anyhow::Result<String> {
         let abs_path = if filename.starts_with("http") {

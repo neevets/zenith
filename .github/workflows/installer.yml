@@ -50,7 +50,7 @@ jobs:
             </head>
             <body>
               <h1>Zenith</h1>
-              <p>Universal installer: auto-detects architecture and installs the latest stable release.</p>
+              <p>The installer auto-detects the architecture and installs the latest stable release.</p>
               
               <h3>Linux / MacOS</h3>
               <pre>curl -fsSL ${{ steps.deployment.outputs.page_url }}install.sh | sh -s -- -y</pre>

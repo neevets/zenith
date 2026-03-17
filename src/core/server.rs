@@ -56,7 +56,7 @@ pub async fn start(port: &str) -> std::io::Result<()> {
         format!("127.0.0.1:{}", port)
     };
 
-    println!("Zenith Server starting on http://{}", addr);
+    println!("Server starting on http://{}", addr);
 
     HttpServer::new(|| App::new().default_service(web::to(handle_zenith)))
         .bind(addr)?

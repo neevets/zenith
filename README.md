@@ -62,7 +62,7 @@
 ```bash
 # Linux/MacOS
 curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y
-# Windows
+# Windows (PowerShell)
 iwr -useb https://neevets.github.io/zenith/install.ps1 | iex
 ```
 
