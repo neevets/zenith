@@ -2,6 +2,7 @@ use crate::core::analyzer::LifeCycleMap;
 use crate::core::ast::{
     BlockStatement, Expression, ExpressionKind, Parameter, Program, Statement, StatementKind,
 };
+use regex::Regex;
 use std::collections::HashMap;
 
 pub struct Transpiler {
@@ -364,22 +365,15 @@ impl Transpiler {
             ExpressionKind::Variable(name) => name.clone(),
             ExpressionKind::IntegerLiteral(val) => val.to_string(),
             ExpressionKind::FloatLiteral(val) => val.to_string(),
-            ExpressionKind::StringLiteral {
-                value, delimiter, ..
-            } => {
-                let escaped = if *delimiter == '"' {
-                    value.replace("\\\"", "\"").replace("\"", "\\\"")
+            ExpressionKind::StringLiteral { value, .. } => {
+                let interpolated = Self::interpolate_string_literal(value);
+                if interpolated.contains("{$") {
+                    let escaped = interpolated.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("\"{}\"", escaped)
                 } else {
-                    value.clone()
-                };
-
-                let re = regex::Regex::new(r"\{ (.*?) \}").unwrap();
-                let interpolated = re.replace_all(&escaped, |caps: &regex::Captures| {
-                    let expr = &caps[1];
-                    let php_expr = expr.replace(".", "->");
-                    format!("{{${}}}", php_expr.trim().trim_start_matches('$'))
-                });
-                format!("\"{}\"", interpolated)
+                    let escaped = value.replace('\'', "\\'");
+                    format!("'{}'", escaped)
+                }
             }
             ExpressionKind::ArrayLiteral(elements) => {
                 let els: Vec<String> = elements
@@ -468,6 +462,11 @@ impl Transpiler {
                     .iter()
                     .map(|e| self.transpile_expression(e))
                     .collect();
+
+                if let Some(regex_call) = Self::transpile_regex_method_call(&obj, method, &args) {
+                    return regex_call;
+                }
+
                 if obj == "native" {
                     if method == "microtime" {
                         return format!("microtime({})", args.join(", "));
@@ -840,6 +839,39 @@ impl Transpiler {
         out.push_str("    public static function microtime($get_as_float = false) { return microtime($get_as_float); }\n");
         out.push_str("    public static function fill($n, $v) { return array_fill(0, $n, $v); }\n");
         out.push_str("    public static function range($s, $e) { return range($s, $e); }\n");
+        out.push_str(
+            "    public static function regex_match($subject, $pattern, $flags = '' ) {\n",
+        );
+        out.push_str("        $modifiers = is_string($flags) ? $flags : '';\n");
+        out.push_str("        $finalPattern = '/' . str_replace('/', '\\/', (string)$pattern) . '/' . $modifiers;\n");
+        out.push_str("        return preg_match($finalPattern, (string)$subject) === 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    public static function regex_replace($subject, $pattern, $replacement, $limit = -1) {\n");
+        out.push_str(
+            "        $finalPattern = '/' . str_replace('/', '\\/', (string)$pattern) . '/';\n",
+        );
+        out.push_str("        return preg_replace($finalPattern, (string)$replacement, (string)$subject, (int)$limit);\n");
+        out.push_str("    }\n");
+        out.push_str(
+            "    public static function regex_capture($subject, $pattern, $group = 0) {\n",
+        );
+        out.push_str(
+            "        $finalPattern = '/' . str_replace('/', '\\/', (string)$pattern) . '/';\n",
+        );
+        out.push_str("        $matches = [];\n");
+        out.push_str("        if (preg_match($finalPattern, (string)$subject, $matches) !== 1) return null;\n");
+        out.push_str("        return $matches[(int)$group] ?? null;\n");
+        out.push_str("    }\n");
+        out.push_str(
+            "    public static function regex_capture_all($subject, $pattern, $group = 0) {\n",
+        );
+        out.push_str(
+            "        $finalPattern = '/' . str_replace('/', '\\/', (string)$pattern) . '/';\n",
+        );
+        out.push_str("        $matches = [];\n");
+        out.push_str("        preg_match_all($finalPattern, (string)$subject, $matches);\n");
+        out.push_str("        return $matches[(int)$group] ?? [];\n");
+        out.push_str("    }\n");
         out.push_str("    public static function sanitize($v, $type) {\n");
         out.push_str("        if ($type === 'html') return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');\n");
         out.push_str("        return $v;\n");
@@ -924,6 +956,63 @@ impl Transpiler {
             Some("any") => "".into(),
             Some(x) if x.ends_with("[]") => "array".into(),
             _ => "".into(),
+        }
+    }
+
+    fn interpolate_string_literal(value: &str) -> String {
+        let placeholder_open = "__ZENITH_ESCAPED_OPEN_BRACE__";
+        let sanitized = value.replace(r"\{", placeholder_open);
+        let interpolation = Regex::new(r"\{\s*([\$A-Za-z_][A-Za-z0-9_\.$]*)\s*\}").unwrap();
+        let interpolated = interpolation.replace_all(&sanitized, |caps: &regex::Captures| {
+            let php_expr = caps[1]
+                .replace('.', "->")
+                .trim_start_matches('$')
+                .trim()
+                .to_string();
+            format!("{{$${}}}", php_expr)
+        });
+
+        interpolated
+            .replace(placeholder_open, "{")
+            .replace("$$", "$")
+    }
+
+    fn transpile_regex_method_call(obj: &str, method: &str, args: &[String]) -> Option<String> {
+        match method {
+            "regex_match" => {
+                let pattern = args.first()?.clone();
+                let flags = args.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                Some(format!(
+                    "ZenithRuntime::regex_match({}, {}, {})",
+                    obj, pattern, flags
+                ))
+            }
+            "regex_replace" => {
+                let pattern = args.first()?.clone();
+                let replacement = args.get(1)?.clone();
+                let limit = args.get(2).cloned().unwrap_or_else(|| "-1".to_string());
+                Some(format!(
+                    "ZenithRuntime::regex_replace({}, {}, {}, {})",
+                    obj, pattern, replacement, limit
+                ))
+            }
+            "regex_capture" => {
+                let pattern = args.first()?.clone();
+                let group = args.get(1).cloned().unwrap_or_else(|| "0".to_string());
+                Some(format!(
+                    "ZenithRuntime::regex_capture({}, {}, {})",
+                    obj, pattern, group
+                ))
+            }
+            "regex_capture_all" => {
+                let pattern = args.first()?.clone();
+                let group = args.get(1).cloned().unwrap_or_else(|| "0".to_string());
+                Some(format!(
+                    "ZenithRuntime::regex_capture_all({}, {}, {})",
+                    obj, pattern, group
+                ))
+            }
+            _ => None,
         }
     }
 }

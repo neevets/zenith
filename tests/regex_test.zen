@@ -1,0 +1,21 @@
+test "regex string ops: valid email" {
+    let $email = "alice.zenith+dev@acme.io";
+    z_assert($email.regex_match("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"), "email regex_match should be true");
+}
+
+test "regex string ops: replace and capture" {
+    let $version = "Zenith v2.14.9";
+    let $normalized = $version.regex_replace("\\s+", "-");
+    z_assert($normalized == "Zenith-v2.14.9", "regex_replace should normalize spaces");
+
+    let $major = $version.regex_capture("v(\\d+)\\.", 1);
+    z_assert($major == "2", "regex_capture should return first capturing group");
+}
+
+test "regex string ops: capture all ids" {
+    let $line = "id=10,id=21,id=34";
+    let $ids = $line.regex_capture_all("id=(\\d+)", 1);
+    z_assert($ids[0] == "10", "first id");
+    z_assert($ids[1] == "21", "second id");
+    z_assert($ids[2] == "34", "third id");
+}
