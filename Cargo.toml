@@ -27,6 +27,7 @@ actix-web = "4.4"
 actix-files = "0.6"
 actix-rt = "2.9"
 rustc-hash = "1.1"
+openssl = { version = "0.10", features = ["vendored"] }
 
 tower-lsp = "0.20"
 lsp-types = "0.94"
