@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 true
             } else {
-                !is_inner // LBracketHash already has the bracket
+                !is_inner
             };
 
             if self.cur_token.literal == "strict" {
@@ -227,7 +227,6 @@ impl<'a> Parser<'a> {
         if self.peek_token_is(TokenType::Var) || self.peek_token_is(TokenType::Ident) {
             self.next_token();
         } else {
-            // force error if neither
             self.expect_peek(TokenType::Var);
         }
         let name = self.cur_token.literal.clone();
@@ -287,7 +286,7 @@ impl<'a> Parser<'a> {
             self.expect_peek(TokenType::Ident);
             parent = Some(self.cur_token.literal.clone());
         } else if self.peek_token_is(TokenType::Ident) && self.peek_token.literal == "extends" {
-            self.next_token(); // consume "extends"
+            self.next_token();
             self.expect_peek(TokenType::Ident);
             parent = Some(self.cur_token.literal.clone());
         }
@@ -886,14 +885,14 @@ impl<'a> Parser<'a> {
             TokenType::Ident | TokenType::Var => {
                 let mut name = start_token.literal.clone();
                 while self.peek_token_is(TokenType::Dot) {
-                    self.next_token(); // cur is .
-                    self.expect_peek(TokenType::Ident); // cur is next part
+                    self.next_token();
+                    self.expect_peek(TokenType::Ident);
                     name.push('.');
                     name.push_str(&self.cur_token.literal);
                 }
                 if self.peek_token_is(TokenType::LBrace) {
                     self.next_token();
-                    self.next_token(); // move to first field name
+                    self.next_token();
                     let mut fields = Vec::new();
                     while !self.cur_token_is(TokenType::RBrace)
                         && !self.cur_token_is(TokenType::Eof)
@@ -907,12 +906,11 @@ impl<'a> Parser<'a> {
                         self.next_token();
                         fields.push((field_name, self.parse_pattern()));
 
-                        // After parse_pattern, cur_token is the last token of that pattern.
                         if self.peek_token_is(TokenType::Comma) {
-                            self.next_token(); // move to comma
-                            self.next_token(); // move to next field
+                            self.next_token();
+                            self.next_token();
                         } else {
-                            self.next_token(); // move to RBrace or whatever is next
+                            self.next_token();
                         }
                     }
                     Pattern {
@@ -1121,8 +1119,6 @@ impl<'a> Parser<'a> {
         let mut param_type = None;
         let mut is_var = false;
 
-        // Support: Type $var, $var, or name
-        // A "Type" can be an Ident or a built-in type token.
         let is_type_token = matches!(
             self.cur_token.token_type,
             TokenType::Ident

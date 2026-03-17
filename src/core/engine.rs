@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 
 pub struct Options {
     pub allow_read: bool,
-    pub allow_net: bool,
+    pub allow_net: bool, 
     pub allow_env: bool,
 }
 
@@ -99,7 +99,7 @@ impl Engine {
 
         if !lc_map.errors.is_empty() {
             return Err(anyhow::anyhow!(
-                "Quantum Shield blocked execution in {}:\n{}",
+                "Zenith Analyzer blocked execution in {}:\n{}",
                 filename,
                 lc_map.errors.join("\n")
             ));
@@ -190,7 +190,7 @@ impl Engine {
             args.push("-d".to_string());
             args.push("allow_url_fopen=Off".to_string());
             let disabled_funcs =
-                "curl_init,curl_exec,fsockopen,pfsockopen,stream_socket_client,socket_create";
+                "curl_init,curl_exec,curl_multi_exec,fsockopen,pfsockopen,stream_socket_client,socket_create,system,exec,shell_exec,passthru,proc_open,popen";
             args.push("-d".to_string());
             args.push(format!("disable_functions={}", disabled_funcs));
         }

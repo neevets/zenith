@@ -72,7 +72,7 @@ impl Analyzer {
 
         if program.is_strict && !self.lc_map.errors.is_empty() {
             for err in &mut self.lc_map.errors {
-                if !err.starts_with("[Strict]") && !err.starts_with("[Quantum Shield]") {
+                if !err.starts_with("[Strict]") && !err.starts_with("[Zenith Analyzer]") {
                     *err = format!("[Strict] {}", err);
                 }
             }
@@ -255,7 +255,7 @@ impl Analyzer {
                     ];
                     if unsafe_funcs.contains(&name.as_str()) {
                         self.lc_map.errors.push(format!(
-                            "[Quantum Shield] Unsafe execution blocked: {} is restricted.",
+                            "[Zenith Analyzer] Unsafe execution blocked: {} is restricted.",
                             name
                         ));
                     }
@@ -274,7 +274,7 @@ impl Analyzer {
                     if name == "db" && (method == "query" || method == "execute") {
                         for arg in arguments {
                             if self.is_dynamic_sql(arg) {
-                                self.lc_map.errors.push("[Quantum Shield] Possible SQL Injection: Avoid dynamic SQL construction. Use parameterized blocks.".into());
+                                self.lc_map.errors.push("[Zenith Analyzer] Possible SQL Injection: Avoid dynamic SQL construction. Use parameterized blocks.".into());
                             }
                         }
                     }
@@ -287,7 +287,7 @@ impl Analyzer {
                         for arg in arguments {
                             if self.is_suspicious_path(arg) {
                                 self.lc_map.errors.push(format!(
-                                    "[Quantum Shield] Path Traversal detected in {}.",
+                                    "[Zenith Analyzer] Path Traversal detected in {}.",
                                     method
                                 ));
                             }
@@ -301,12 +301,12 @@ impl Analyzer {
             ExpressionKind::SqlQueryExpression { query, .. } => {
                 if self.re_sql_hard.is_match(query) {
                     self.lc_map.errors.push(
-                        "[Quantum Shield] Forbidden SQL operation: DROP/TRUNCATE/ALTER blocked."
+                        "[Zenith Analyzer] Forbidden SQL operation: DROP/TRUNCATE/ALTER blocked."
                             .into(),
                     );
                 }
                 if query.contains(" + ") || query.contains(" . ") || query.contains("$$") {
-                    self.lc_map.errors.push("[Quantum Shield] Possible SQL Injection: Dynamic construction in query block.".into());
+                    self.lc_map.errors.push("[Zenith Analyzer] Possible SQL Injection: Dynamic construction in query block.".into());
                 }
             }
             _ => {}

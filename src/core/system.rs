@@ -35,17 +35,21 @@ pub fn ensure_php() -> anyhow::Result<String> {
         }
 
         println!(
-            "Managed PHP found at '{}' but version is lower than {}. Reinstalling runtime.",
+            "[Zenith] Managed PHP found at '{}' but version is lower than {}.",
             local_path, PHP_VERSION
         );
     }
 
+    if env::var("ZENITH_AUTO_INSTALL_RUNTIME").unwrap_or_default() != "1" {
+        return Err(anyhow::anyhow!(
+            "PHP {} or higher not found. Please install it on your system or run with ZENITH_AUTO_INSTALL_RUNTIME=1 to allow Zenith to download a managed runtime from PMMP.",
+            PHP_VERSION
+        ));
+    }
+
     println!(
-        "PHP {} not found. Downloading PHP {} for {}/{}...",
-        PHP_VERSION,
-        PHP_VERSION,
-        env::consts::OS,
-        env::consts::ARCH
+        "[Zenith] Downloading PHP {} runtime from PMMP ({})...",
+        PHP_VERSION, BASE_URL
     );
     fs::create_dir_all(&local_bin)?;
 
@@ -74,8 +78,6 @@ pub fn ensure_php() -> anyhow::Result<String> {
         {
             if entry.file_name() == "php" || entry.file_name() == "php.exe" {
                 if entry.path().is_file() {
-                    let p = entry.path().to_path_buf();
-                    // Basic sanity check to ensure it's the right one (PMMP binaries are in a bin dir)
                     if p.to_string_lossy().contains("/bin/") {
                         found_path = Some(p);
                         break;
@@ -93,7 +95,6 @@ pub fn ensure_php() -> anyhow::Result<String> {
                 perms.set_mode(0o755);
                 fs::set_permissions(&path, perms)?;
 
-                // Create a symlink at the expected local_php location
                 let _ = std::os::unix::fs::symlink(&path, &local_php);
             }
             return Ok(path.to_string_lossy().to_string());
@@ -135,7 +136,6 @@ fn get_download_url() -> anyhow::Result<String> {
         }
     };
 
-    // PMMP Format: PHP-8.4-Linux-x86_64-PM5.tar.gz
     Ok(format!(
         "{}PHP-{}-{}-{}-PM5.{}",
         BASE_URL, PHP_VERSION, os_name, arch, ext

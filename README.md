@@ -3,7 +3,7 @@
 <img src="assets/zen-logo.png" width="200" alt="Zenith Logo" />
 
 <h1>
-  <a href="https://zenith-lang.org">Zenith</a>
+  <a href="https://zenithlang.xyz">Zenith</a>
 </h1>
 
 <p>
@@ -14,57 +14,56 @@
   <img src="https://img.shields.io/github/forks/neevets/zenith" alt="Forks">
 </p>
 
+> [WARNING]
+
+> **Zenith is an experimental research project.** It is NOT production-ready. The security features and type analysis are in prototype stage, in development, and should not be relied upon for mission-critical applications.
+
 </div>
 
 # Table of Contents
 
 1. [Introduction](#introduction)
-2. [Core Pillars](#core-pillars)
-3. [Installation](#installation)
-4. [Documentation](#documentation)
-5. [License](#license)
-6. [Contributing](#contributing)
+2. [Why Zenith?](#why-zenith)
+3. [Architecture](#architecture)
+4. [Managed Execution Context](#managed-execution-context)
+5. [Installation](#installation)
+6. [Documentation](#documentation)
+7. [License](#license)
 
 ---
 
 # Introduction
 
-**Zenith** is a high-performance programming language that transpiles to **PHP 8.5+**. It combines the ubiquity of PHP with the safety and ergonomics of modern functional languages, powered by an optimized engine designed for maximum efficiency.
+**Zenith** is a programming language that transpiles to **PHP 8.4+**. It is designed to explore modern functional syntax, safe-by-default database queries, and simplified concurrency on top of the PHP ecosystem.
 
 ---
 
-# Core Pillars
+# Why Zenith?
 
-- **Optimized Engine**  
-  High-performance parser, analyzer, and transpiler core.
+Zenith aims to solve specific ergonomic and safety pain points through syntax-level integration:
 
-- **Modern Transpilation**  
-  Targets modern PHP 8.5+ features like `match`, `function`, and `?->`.
-
-- **Quantum Shield**  
-  Strict static type system that eliminates runtime type errors.
-
-- **Functional Ergonomics**  
-  Native pipe operator `|>` and high-order functions.
-
-- **Secure by Design**  
-  Sandboxed environment with explicit permissions (FS, Net, Env).
-
-- **Concurrent Blocks**  
-  Native support for parallelism via `spawn` blocks and fibers.
+- **Simplified Concurrency**: Native `spawn` blocks that handle PHP Fibers automatically.
+- **Safe-by-default SQL**: Inline SQL queries that are validated and parameterized at compile-time.
+- **Functional Ergonomics**: Native pipe operator `|>` and built-in memoization support.
+- **Static Analysis**: Built-in Zenith Analyzer for detecting common pitfalls like path traversal and SQL injection during development.
 
 ---
 
 # Installation
 
-## Quick Install
+## Quick Install (Experimental Only)
 
 ```bash
 # Linux/MacOS
 curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y
+
 # Windows (PowerShell)
 iwr -useb https://neevets.github.io/zenith/install.ps1 | iex
 ```
+
+> [IMPORTANT]
+
+> To protect users, Zenith will NO LONGER download managed PHP binaries automatically. You must have PHP 8.4 installed on your system or explicitly set `ZENITH_AUTO_INSTALL_RUNTIME=1`.
 
 See full installer usage in [docs/installation.md](docs/installation.md).
 
