@@ -14,8 +14,6 @@
   <img src="https://img.shields.io/github/forks/neevets/zenith" alt="Forks">
 </p>
 
-> [WARNING]
-
 > **Zenith is an experimental research project.** It is NOT production-ready. The security features and type analysis are in prototype stage, in development, and should not be relied upon for mission-critical applications.
 
 </div>
@@ -60,8 +58,6 @@ curl -fsSL https://neevets.github.io/zenith/install.sh | sh -s -- -y
 # Windows (PowerShell)
 iwr -useb https://neevets.github.io/zenith/install.ps1 | iex
 ```
-
-> [IMPORTANT]
 
 > To protect users, Zenith will NO LONGER download managed PHP binaries automatically. You must have PHP 8.4 installed on your system or explicitly set `ZENITH_AUTO_INSTALL_RUNTIME=1`.
 
