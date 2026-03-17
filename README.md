@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/github/forks/neevets/zenith" alt="Forks">
 </p>
 
-> **Zenith is an experimental research project.** It is NOT production-ready. The security features and type analysis are in prototype stage, in development, and should not be relied upon for mission-critical applications.
+> **Zenith is an experimental research project.** It is NOT production-ready. The security features and type analysis are in prototype/development stage, and should not be relied upon for mission-critical applications.
 
 </div>
 
