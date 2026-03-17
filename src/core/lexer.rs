@@ -135,6 +135,8 @@ pub enum TokenType {
     LBracket,
     #[token("]")]
     RBracket,
+    #[token("#!")]
+    HashBang,
     #[token("#[")]
     LBracketHash,
     #[token("+")]

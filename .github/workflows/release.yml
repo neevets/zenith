@@ -19,25 +19,19 @@ jobs:
   test:
     name: Quality Control
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
       - name: Format check
         run: cargo fmt --all -- --check
-
       - name: Build check
         run: cargo check --all-targets --locked
-
       - name: Run tests
         run: cargo test --all-targets --locked
 
@@ -46,11 +40,17 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
+          # --- NUEVA VERSIÓN PRO (MUSL) PARA LINUX ---
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            target_name: zenith-linux-x86_64-static
+            bin: zenith
+
+          # Versión estándar (GNU)
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             target_name: zenith-linux-x86_64
@@ -77,6 +77,11 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      # Instalamos las herramientas para compilar MUSL en Ubuntu
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -115,10 +120,8 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -147,5 +150,4 @@ jobs:
         run: |
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "Zenith $RELEASE_TAG" --notes "Automated release for $RELEASE_TAG"
-
           gh release upload "$RELEASE_TAG" dist/*.tar.gz --clobber

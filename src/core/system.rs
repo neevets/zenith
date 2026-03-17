@@ -77,8 +77,8 @@ pub fn ensure_php() -> anyhow::Result<String> {
                     let p = entry.path().to_path_buf();
                     // Basic sanity check to ensure it's the right one (PMMP binaries are in a bin dir)
                     if p.to_string_lossy().contains("/bin/") {
-                         found_path = Some(p);
-                         break;
+                        found_path = Some(p);
+                        break;
                     }
                 }
             }
@@ -92,7 +92,7 @@ pub fn ensure_php() -> anyhow::Result<String> {
                 let mut perms = fs::metadata(&path)?.permissions();
                 perms.set_mode(0o755);
                 fs::set_permissions(&path, perms)?;
-                
+
                 // Create a symlink at the expected local_php location
                 let _ = std::os::unix::fs::symlink(&path, &local_php);
             }
@@ -127,17 +127,18 @@ fn get_download_url() -> anyhow::Result<String> {
     let arch = match env::consts::ARCH {
         "x86_64" => "x86_64",
         "aarch64" => "arm64",
-        _ => return Err(anyhow::anyhow!("Unsupported Architecture: {}", env::consts::ARCH)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unsupported Architecture: {}",
+                env::consts::ARCH
+            ))
+        }
     };
 
     // PMMP Format: PHP-8.4-Linux-x86_64-PM5.tar.gz
     Ok(format!(
         "{}PHP-{}-{}-{}-PM5.{}",
-        BASE_URL,
-        PHP_VERSION,
-        os_name,
-        arch,
-        ext
+        BASE_URL, PHP_VERSION, os_name, arch, ext
     ))
 }
 

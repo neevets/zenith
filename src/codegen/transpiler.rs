@@ -181,7 +181,9 @@ impl Transpiler {
                 if let Some(alt) = alternative {
                     let mut alt_replacements = FxHashMap::default();
                     alt_replacements.insert("else_body", self.transpile_block(alt));
-                    out.push_str(&self.render_template(" else {\n{{else_body}}}", alt_replacements));
+                    out.push_str(
+                        &self.render_template(" else {\n{{else_body}}}", alt_replacements),
+                    );
                 }
                 out
             }
@@ -205,7 +207,10 @@ impl Transpiler {
                 replacements.insert("iterable", self.transpile_expression(iterable));
                 replacements.insert("var", clean_var);
                 replacements.insert("body", self.transpile_block(body));
-                self.render_template("foreach ({{iterable}} as {{var}}) {\n{{body}}}", replacements)
+                self.render_template(
+                    "foreach ({{iterable}} as {{var}}) {\n{{body}}}",
+                    replacements,
+                )
             }
             StatementKind::FunctionDefinition {
                 name,
@@ -220,9 +225,8 @@ impl Transpiler {
                 for case in cases {
                     let mut case_replacements = FxHashMap::default();
                     case_replacements.insert("name", case.name.clone());
-                    cases_code.push_str(
-                        &self.render_template("    case {{name}};\n", case_replacements),
-                    );
+                    cases_code
+                        .push_str(&self.render_template("    case {{name}};\n", case_replacements));
                 }
                 let mut replacements = FxHashMap::default();
                 replacements.insert("name", name.to_string());
@@ -263,9 +267,10 @@ impl Transpiler {
                             format!("${}", field.name)
                         };
                         field_replacements.insert("name", clean_field_name);
-                        fields_code.push(
-                            self.render_template("        public {{type}}{{name}}", field_replacements),
-                        );
+                        fields_code.push(self.render_template(
+                            "        public {{type}}{{name}}",
+                            field_replacements,
+                        ));
                     }
                     let mut constructor_replacements = FxHashMap::default();
                     constructor_replacements.insert("fields", fields_code.join(",\n"));
@@ -466,7 +471,11 @@ impl Transpiler {
 
                 let is_arithmetic = matches!(operator.as_str(), "+" | "-" | "*" | "/");
                 if is_arithmetic {
-                    let php_op = if operator == "+" { "." } else { operator.as_str() };
+                    let php_op = if operator == "+" {
+                        "."
+                    } else {
+                        operator.as_str()
+                    };
                     format!("{} {} {}", left_s, php_op, right_s)
                 } else {
                     format!("({} {} {})", left_s, op, right_s)
@@ -817,10 +826,9 @@ impl Transpiler {
             if arm.is_default {
                 let mut default_replacements = FxHashMap::default();
                 default_replacements.insert("result", self.transpile_expression(&arm.result));
-                arm_code.push_str(&self.render_template(
-                    "    return {{result}};\n",
-                    default_replacements,
-                ));
+                arm_code.push_str(
+                    &self.render_template("    return {{result}};\n", default_replacements),
+                );
             } else {
                 let mut condition_checks = Vec::new();
                 let mut variable_bindings = Vec::new();
@@ -833,7 +841,7 @@ impl Transpiler {
 
                 let mut arm_replacements = FxHashMap::default();
                 arm_replacements.insert("check", condition_checks.join(" || "));
-                
+
                 let mut bindings_code = String::new();
                 if !variable_bindings.is_empty() {
                     for binding in &variable_bindings[0] {

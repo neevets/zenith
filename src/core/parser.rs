@@ -93,8 +93,17 @@ impl<'a> Parser<'a> {
             span: self.cur_token.span.clone(),
         };
 
-        if self.cur_token_is(TokenType::LBracketHash) {
+        if self.cur_token_is(TokenType::HashBang) || self.cur_token_is(TokenType::LBracketHash) {
+            let is_inner = self.cur_token_is(TokenType::HashBang);
             self.next_token();
+
+            let _has_bracket = if is_inner && self.cur_token_is(TokenType::LBracket) {
+                self.next_token();
+                true
+            } else {
+                !is_inner // LBracketHash already has the bracket
+            };
+
             if self.cur_token.literal == "strict" {
                 program.is_strict = true;
                 self.next_token();
@@ -218,8 +227,8 @@ impl<'a> Parser<'a> {
         if self.peek_token_is(TokenType::Var) || self.peek_token_is(TokenType::Ident) {
             self.next_token();
         } else {
-             // force error if neither
-             self.expect_peek(TokenType::Var);
+            // force error if neither
+            self.expect_peek(TokenType::Var);
         }
         let name = self.cur_token.literal.clone();
 
@@ -296,14 +305,23 @@ impl<'a> Parser<'a> {
                 self.next_token();
             }
 
-            let is_type_token = matches!(self.cur_token.token_type, 
-                TokenType::Ident | TokenType::IntType | TokenType::StringType | 
-                TokenType::BoolType | TokenType::FloatType | TokenType::AnyType | TokenType::VoidType);
+            let is_type_token = matches!(
+                self.cur_token.token_type,
+                TokenType::Ident
+                    | TokenType::IntType
+                    | TokenType::StringType
+                    | TokenType::BoolType
+                    | TokenType::FloatType
+                    | TokenType::AnyType
+                    | TokenType::VoidType
+            );
 
             let field_name;
             let mut field_type = None;
 
-            if is_type_token && (self.peek_token_is(TokenType::Ident) || self.peek_token_is(TokenType::Var)) {
+            if is_type_token
+                && (self.peek_token_is(TokenType::Ident) || self.peek_token_is(TokenType::Var))
+            {
                 field_type = Some(self.cur_token.literal.clone());
                 self.next_token();
                 field_name = self.cur_token.literal.clone();
@@ -888,7 +906,7 @@ impl<'a> Parser<'a> {
                         self.expect_peek(TokenType::Colon);
                         self.next_token();
                         fields.push((field_name, self.parse_pattern()));
-                        
+
                         // After parse_pattern, cur_token is the last token of that pattern.
                         if self.peek_token_is(TokenType::Comma) {
                             self.next_token(); // move to comma
@@ -911,7 +929,8 @@ impl<'a> Parser<'a> {
             TokenType::LBracket => {
                 self.next_token();
                 let mut elements = Vec::new();
-                while !self.cur_token_is(TokenType::RBracket) && !self.cur_token_is(TokenType::Eof) {
+                while !self.cur_token_is(TokenType::RBracket) && !self.cur_token_is(TokenType::Eof)
+                {
                     elements.push(self.parse_pattern());
                     if self.peek_token_is(TokenType::Comma) {
                         self.next_token();
@@ -919,9 +938,13 @@ impl<'a> Parser<'a> {
                     self.next_token();
                 }
                 Pattern {
-                    kind: PatternKind::Struct { 
-                        name: "array".into(), 
-                        fields: elements.into_iter().enumerate().map(|(i, p)| (i.to_string(), p)).collect() 
+                    kind: PatternKind::Struct {
+                        name: "array".into(),
+                        fields: elements
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, p)| (i.to_string(), p))
+                            .collect(),
                     },
                     span: start_span.start..self.cur_token.span.end,
                 }
@@ -1100,9 +1123,16 @@ impl<'a> Parser<'a> {
 
         // Support: Type $var, $var, or name
         // A "Type" can be an Ident or a built-in type token.
-        let is_type_token = matches!(self.cur_token.token_type, 
-            TokenType::Ident | TokenType::IntType | TokenType::StringType | 
-            TokenType::BoolType | TokenType::FloatType | TokenType::AnyType | TokenType::VoidType);
+        let is_type_token = matches!(
+            self.cur_token.token_type,
+            TokenType::Ident
+                | TokenType::IntType
+                | TokenType::StringType
+                | TokenType::BoolType
+                | TokenType::FloatType
+                | TokenType::AnyType
+                | TokenType::VoidType
+        );
 
         if is_type_token && self.peek_token_is(TokenType::Var) {
             param_type = Some(self.cur_token.literal.clone());
