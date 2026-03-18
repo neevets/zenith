@@ -23,10 +23,9 @@
 1. [Introduction](#introduction)
 2. [Why Zenith?](#why-zenith)
 3. [Architecture](#architecture)
-4. [Managed Execution Context](#managed-execution-context)
-5. [Installation](#installation)
-6. [Documentation](#documentation)
-7. [License](#license)
+4. [Installation](#installation)
+5. [Documentation](#documentation)
+6. [License](#license)
 
 ---
 
