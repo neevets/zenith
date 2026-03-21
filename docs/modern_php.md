@@ -7,7 +7,7 @@ Match expressions in Zenith map directly to PHP 8.0 `match(...) { ... }`. Unlike
 
 ### Example
 ```zenith
-let $result = match($code) {
+$res = match($code) {
     200, 201 => "Success",
     404 => "Not Found",
     500 => "Server Error",
@@ -21,7 +21,7 @@ Zenith provides the `?->` operator for safe property and method access on nullab
 ### Example
 ```zenith
 // If $user is null, $name will be null instead of throwing an error.
-let $name = $user?->profile?->getName();
+$name = $user?->profile?->getName();
 ```
 
 ## Constructor Property Promotion

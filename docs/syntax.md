@@ -12,7 +12,9 @@ The `#![strict]` directive converts semantic warnings into fatal compilation err
 
 ```zenith
 #![strict]
-let $x: int = "string"; // Fatal error in strict mode
+$x: int = 10;
+$y = 20;
+$res = $x + $y;
 ```
 
 ## 2. Advanced Functional Paradigm
@@ -20,8 +22,8 @@ let $x: int = "string"; // Fatal error in strict mode
 ### Constant Folding (Compile-Time Evaluation)
 The Zenith transpiler automatically evaluates constant expressions during the code generation phase.
 ```zenith
-let $x = 10 + 20 * 2; // Transpiles directly to $x = 50;
-let $s = "Hello " + "World"; // Transpiles to $s = "Hello World";
+let $x: int = 10 + 20 * 2; // Transpiles directly to $x = 50;
+let $s = "Hello " . "World"; // Transpiles to $s = "Hello World";
 ```
 
 ### Pipe Operator (`|>`) & Placeholders
@@ -33,15 +35,15 @@ $data |> process() |> format("json") |> println();
 ### Modern Closures
 Short closure syntax provides concise lambda definitions with implicit scope capture.
 ```zenith
-let $multiplier = ($n) => $n * 10;
-let $typed_closure = ($x: int): int => $x ** 2;
+$multiplier = ($n) => $n * 10;
+$typed_closure = ($x: int): int => $x ** 2;
 ```
 
 ### Memoization Decorator (`@memoize`)
 Functions can be automatically cached using the `@memoize` attribute. This wraps the function body in a closure and utilizes an internal `static $memo_cache`.
 ```zenith
 @memoize
-function expensive_calc($n) {
+expensive_calc($n) {
     // Computed only once for each distinct $n
     return $n * 3.1415;
 }
@@ -53,14 +55,14 @@ function expensive_calc($n) {
 SQL is a first-class citizen in Zenith. Instead of strings, use `query` blocks that are analyzed for security and syntax.
 ```zenith
 // Global or local DB connection
-db.connect("mysql:host=localhost;dbname=prod");
+db->connect("mysql:host=localhost;dbname=prod");
 
-let $results = query {
+$results = query {
     SELECT u.id, u.email 
     FROM users u 
     WHERE u.status == 'active' 
     LIMIT 10
-};
+}; // Checked against schema at compile time
 ```
 
 ### Sanitization Pipeline (`!>`)
@@ -81,16 +83,15 @@ struct Product {
 }
 ```
 
-## 5. Concurrency Model: Fibers & Spawn
-Zenith abstracts PHP 8.5+ Fibers into high-level concurrency blocks.
-```zenith
-let $task = spawn {
-    println("Task started");
-    yield "Paused";
-    println("Task resumed");
-};
+## 5. Concurrency Model: I/O Parallelism
+Zenith abstracts PHP 8.4+ Fibers into high-level `spawn` blocks, ideal for parallel I/O tasks like fetching multiple APIs during a single web request.
 
-$task.resume(); // Output: Task started
+```zenith
+$api1 = spawn { fetch("https://api.v1.com") };
+$api2 = spawn { fetch("https://api.v2.com") };
+
+// Wait and collect results in parallel
+$results = [$api1->resume(), $api2->resume()]; 
 ```
 
 ## 6. Type System & Structs
@@ -111,6 +112,34 @@ struct User : Entity {
 ## 7. Native Interoperability
 Access native PHP functions or classes using the double-backslash `\\` prefix.
 ```zenith
-let $pdo = \\PDO { "sqlite::memory:" };
-let $time = \\time();
+$pdo = \\PDO { "sqlite::memory:" };
+$time = \\time();
 ```
+
+## 8. Typed ORM (Active Record)
+Zenith turns simple `struct`s into powerful database models using the `@Table` attribute. This provides a zero-overhead, type-safe ORM experience.
+
+### Model Definition
+```zenith
+@Table("users")
+struct User {
+    id: int,
+    name: string,
+    email: string,
+    active: bool
+}
+```
+
+### Usage
+```zenith
+// Static retrieval
+$user = User::find(1);
+
+// Static where-clause (transpiles to optimized SQL)
+$active_users = User::where("active", true)->get();
+
+// Method-based persistence
+$user->name = "New Name";
+$user->save();
+```
+Zenith handles the mapping between your struct fields and database columns automatically at compile-time when using `query` blocks or ORM methods.

@@ -17,9 +17,10 @@ pub struct Analyzer {
     lc_map: LifeCycleMap,
     type_checker: TypeChecker,
     in_loop: bool,
-    re_sql_inj: Regex,
     re_sql_hard: Regex,
     re_path_trav: Regex,
+    skip_checks: bool,
+    db_schema: HashMap<String, Vec<String>>,
 }
 
 impl Analyzer {
@@ -53,7 +54,13 @@ impl Analyzer {
             re_sql_inj: Regex::new(r"(?i)(\bOR\b\s+.+?=|[;']|--|\bUNION\b\s+\bSELECT\b|\bINSERT\b\s+\bINTO\b|\bUPDATE\b\s+.+?\bSET\b|\bDELETE\b\s+\bFROM\b)").unwrap(),
             re_sql_hard: Regex::new(r"(?i)\b(DROP|TRUNCATE|ALTER)\b\s+\bTABLE\b").unwrap(),
             re_path_trav: Regex::new(r"(\.\./|\.\.\\|/etc/|C:\\|[a-zA-Z0-9_\-]+/(\.\./)+)").unwrap(),
+            skip_checks: false,
+            db_schema: HashMap::new(),
         }
+    }
+
+    pub fn set_schema(&mut self, schema: HashMap<String, Vec<String>>) {
+        self.db_schema = schema;
     }
 
     pub fn analyze(&mut self, program: &Program) -> LifeCycleMap {
@@ -105,8 +112,18 @@ impl Analyzer {
     }
 
     fn analyze_statement_with_security(&mut self, stmt: &Statement, index: usize) {
+        let old_skip = self.skip_checks;
+        for attr in &stmt.attributes {
+            if attr.name == "Unsafe" || attr.name == "NoChecks" {
+                self.skip_checks = true;
+            }
+        }
+
         self.analyze_statement(stmt, index);
-        self.check_statement_security(stmt);
+        if !self.skip_checks {
+            self.check_statement_security(stmt);
+        }
+        self.skip_checks = old_skip;
     }
 
     fn analyze_statement(&mut self, stmt: &Statement, index: usize) {
@@ -298,7 +315,7 @@ impl Analyzer {
                     self.check_expression_security(arg);
                 }
             }
-            ExpressionKind::SqlQueryExpression { query, .. } => {
+            ExpressionKind::SqlQueryExpression { query, table, columns, .. } => {
                 if self.re_sql_hard.is_match(query) {
                     self.lc_map.errors.push(
                         "[Zenith Analyzer] Forbidden SQL operation: DROP/TRUNCATE/ALTER blocked."
@@ -307,6 +324,27 @@ impl Analyzer {
                 }
                 if query.contains(" + ") || query.contains(" . ") || query.contains("$$") {
                     self.lc_map.errors.push("[Zenith Analyzer] Possible SQL Injection: Dynamic construction in query block.".into());
+                }
+
+                // Schema validation
+                if !self.db_schema.is_empty() {
+                    if let Some(t) = table {
+                        if let Some(cols) = self.db_schema.get(t) {
+                            for col in columns {
+                                if col != "*" && !cols.contains(col) {
+                                    self.lc_map.errors.push(format!(
+                                        "[Zenith Analyzer] Schema Error: Column '{}' not found in table '{}'.",
+                                        col, t
+                                    ));
+                                }
+                            }
+                        } else {
+                            self.lc_map.errors.push(format!(
+                                "[Zenith Analyzer] Schema Error: Table '{}' not found in target database.",
+                                t
+                            ));
+                        }
+                    }
                 }
             }
             _ => {}

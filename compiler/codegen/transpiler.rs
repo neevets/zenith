@@ -55,6 +55,39 @@ impl Transpiler {
 
     pub fn transpile(&mut self, program: &Program) -> String {
         let mut out = String::new();
+        
+        // Base ORM logic if needed
+        let mut has_orm = false;
+        for stmt in &program.statements {
+            if stmt.attributes.iter().any(|a| a.name == "Table") {
+                has_orm = true;
+                break;
+            }
+        }
+        
+        if has_orm {
+            out.push_str("abstract class ZenithModel {\n");
+            out.push_str("    protected static $table;\n");
+            out.push_str("    public function __construct(array $data = []) {\n");
+            out.push_str("        foreach ($data as $key => $value) { $this->$key = $value; }\n");
+            out.push_str("    }\n");
+            out.push_str("    public static function find($id) {\n");
+            out.push_str("        $db = $GLOBALS['db'] ?? null;\n");
+            out.push_str("        $res = $db->query(\"SELECT * FROM \" . static::$table . \" WHERE id = ?\", [$id]);\n");
+            out.push_str("        return $res ? new static($res[0]) : null;\n");
+            out.push_str("    }\n");
+            out.push_str("    public function save() {\n");
+            out.push_str("        $db = $GLOBALS['db'] ?? null;\n");
+            out.push_str("        $fields = get_object_vars($this);\n");
+            out.push_str("        if (isset($this->id)) {\n");
+            out.push_str("            $db->query(\"UPDATE \" . static::$table . \" SET ...\", array_values($fields));\n");
+            out.push_str("        } else {\n");
+            out.push_str("            $db->query(\"INSERT INTO \" . static::$table . \" ...\", array_values($fields));\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+            out.push_str("}\n\n");
+        }
+
         for stmt in &program.statements {
             if let StatementKind::Let { name, .. } = &stmt.kind {
                 let clean_name = if name.starts_with('$') {
@@ -241,16 +274,33 @@ impl Transpiler {
                 let mut replacements = FxHashMap::default();
                 replacements.insert("name", name.to_string());
 
+                let mut table_attr = None;
+                for attr in &stmt.attributes {
+                    if attr.name == "Table" {
+                        if let Some(arg) = attr.arguments.first() {
+                            table_attr = Some(self.transpile_expression(arg));
+                        }
+                    }
+                }
+
                 let mut extends_line = String::new();
                 if let Some(p) = parent {
                     let mut parent_replacements = FxHashMap::default();
                     parent_replacements.insert("parent", p.to_string());
                     extends_line = self.render_template(" extends {{parent}}", parent_replacements);
+                } else if table_attr.is_some() {
+                    extends_line = " extends ZenithModel".to_string();
                 }
                 replacements.insert("extends", extends_line);
 
+                let mut table_property = String::new();
+                if let Some(t) = table_attr {
+                    table_property = format!("    protected static $table = {};\n", t);
+                }
+                replacements.insert("table_prop", table_property);
+
                 let mut constructor = String::new();
-                if !fields.is_empty() || parent.is_none() {
+                if !fields.is_empty() || (parent.is_none() && table_attr.is_none()) {
                     let mut fields_code: Vec<String> = Vec::new();
                     for field in fields {
                         let php_type = self.map_type(field.field_type.as_deref());
@@ -270,6 +320,7 @@ impl Transpiler {
                         fields_code.push(self.render_template(
                             "        public {{type}}{{name}}",
                             field_replacements,
+                            // Note: for ORM we might want to default them or handle assignments
                         ));
                     }
                     let mut constructor_replacements = FxHashMap::default();
@@ -282,7 +333,7 @@ impl Transpiler {
                 replacements.insert("constructor", constructor);
 
                 self.render_template(
-                    "class {{name}}{{extends}} {\n{{constructor}}\n}",
+                    "class {{name}}{{extends}} {\n{{table_prop}}{{constructor}}\n}",
                     replacements,
                 )
             }
@@ -401,7 +452,7 @@ impl Transpiler {
                 } else if name == "json" {
                     "json".into()
                 } else {
-                    name.replace('.', "::")
+                    name.replace("::", "\\")
                 }
             }
             ExpressionKind::Variable(name) => name.clone(),
@@ -464,21 +515,23 @@ impl Transpiler {
                 let mut left_s = self.transpile_expression(left);
                 let right_s = self.transpile_expression(right);
 
-                if operator == "+" && left_s.ends_with('"') && right_s.starts_with('"') {
-                    left_s.pop();
-                    return format!("{}\"{}\"", left_s, &right_s[1..]);
-                }
-
-                let is_arithmetic = matches!(operator.as_str(), "+" | "-" | "*" | "/");
-                if is_arithmetic {
-                    let php_op = if operator == "+" {
-                        "."
-                    } else {
-                        operator.as_str()
-                    };
-                    format!("{} {} {}", left_s, php_op, right_s)
-                } else {
-                    format!("({} {} {})", left_s, op, right_s)
+                match operator.as_str() {
+                    "." => format!("({} . {})", left_s, right_s),
+                    "+" => format!("({} + {})", left_s, right_s),
+                    "==" => format!("({} === {})", left_s, right_s),
+                    "!=" => format!("({} !== {})", left_s, right_s),
+                    "=>" => {
+                        let right_transant = match &right.kind {
+                            ExpressionKind::Identifier(name) => format!("'{}'", name),
+                            _ => self.transpile_expression(right),
+                        };
+                        format!(
+                            "ZenithRuntime::map({}, {})",
+                            self.transpile_expression(left),
+                            right_transant
+                        )
+                    }
+                    _ => format!("({} {} {})", left_s, op, right_s),
                 }
             }
             ExpressionKind::IndexExpression { left, index } => {
@@ -532,15 +585,14 @@ impl Transpiler {
                     return format!("{}->start({})", obj, args.join(", "));
                 }
 
-                let is_static = obj.chars().next().map_or(false, |c| c.is_uppercase());
-                let op = if is_static {
-                    "::"
+                let (final_op, final_method) = if method.starts_with("::") {
+                    ("::", &method[2..])
                 } else if *is_nullsafe {
-                    "?->"
+                    ("?->", method.as_str())
                 } else {
-                    "->"
+                    ("->", method.as_str())
                 };
-                format!("{}{}{}({})", obj, op, method, args.join(", "))
+                format!("{}{}{}({})", obj, final_op, final_method, args.join(", "))
             }
             ExpressionKind::MemberExpression {
                 object,
@@ -548,15 +600,14 @@ impl Transpiler {
                 is_nullsafe,
             } => {
                 let obj = self.transpile_expression(object);
-                let is_static = obj.chars().next().map_or(false, |c| c.is_uppercase());
-                let op = if is_static {
-                    "::"
+                let (final_op, final_prop) = if property.starts_with("::") {
+                    ("::", &property[2..])
                 } else if *is_nullsafe {
-                    "?->"
+                    ("?->", property.as_str())
                 } else {
-                    "->"
+                    ("->", property.as_str())
                 };
-                format!("{}{}{}", obj, op, property)
+                format!("{}{}{}", obj, final_op, final_prop)
             }
             ExpressionKind::MatchExpression { condition, arms } => {
                 self.transpile_match_expression(condition, arms)
@@ -709,9 +760,14 @@ impl Transpiler {
                         format!("'{}' => {}", clean_n, self.transpile_expression(v))
                     })
                     .collect();
-                format!("new {}(...[{}])", name.replace('.', "\\"), fds.join(", "))
+                format!("new {}(...[{}])", name.replace("::", "\\"), fds.join(", "))
             }
             ExpressionKind::Block(block) => {
+                if block.statements.len() == 1 {
+                    if let StatementKind::Expression(inner_expr) = &block.statements[0].kind {
+                        return self.transpile_expression(inner_expr);
+                    }
+                }
                 let mut replacements = FxHashMap::default();
                 replacements.insert("body", self.transpile_block(block));
                 self.render_template("(function() {\n{{body}}    })()", replacements)
@@ -1052,7 +1108,8 @@ impl Transpiler {
         let interpolation = Regex::new(r"\{\s*([\$A-Za-z_][A-Za-z0-9_\.$]*)\s*\}").unwrap();
         let interpolated = interpolation.replace_all(&sanitized, |caps: &regex::Captures| {
             let php_expr = caps[1]
-                .replace('.', "->")
+                .replace("->", "->")
+                .replace("::", "::")
                 .trim_start_matches('$')
                 .trim()
                 .to_string();

@@ -34,7 +34,7 @@ enum Precedence {
 impl From<&TokenType> for Precedence {
     fn from(t: &TokenType) -> Self {
         match t {
-            TokenType::Arrow => Precedence::Pipe,
+            TokenType::DoubleArrow => Precedence::Pipe,
             TokenType::Pipe => Precedence::Pipe,
             TokenType::Sanitize => Precedence::Sanitize,
             TokenType::Assign => Precedence::Assign,
@@ -42,8 +42,8 @@ impl From<&TokenType> for Precedence {
             TokenType::Or => Precedence::Or,
             TokenType::And => Precedence::And,
             TokenType::LParen | TokenType::LBrace => Precedence::Call,
-            TokenType::LBracket | TokenType::Nullsafe => Precedence::Index,
-            TokenType::Dot => Precedence::Call,
+            TokenType::LBracket | TokenType::Nullsafe | TokenType::Arrow | TokenType::DoubleColon => Precedence::Call,
+            TokenType::Dot => Precedence::Sum,
             TokenType::Lt
             | TokenType::Gt
             | TokenType::Leq
@@ -141,7 +141,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
-        match self.cur_token.token_type {
+        let mut attributes = Vec::new();
+        while self.cur_token_is(TokenType::At) || self.cur_token_is(TokenType::LBracketHash) {
+            if let Some(attr) = self.parse_attribute() {
+                attributes.push(attr);
+            }
+        }
+
+        let mut stmt = match self.cur_token.token_type {
             TokenType::Render => Some(self.parse_function_definition(true, false)),
             TokenType::Function => Some(self.parse_function_definition(false, false)),
             TokenType::Return => Some(self.parse_return_statement()),
@@ -157,29 +164,47 @@ impl<'a> Parser<'a> {
             TokenType::Route => Some(self.parse_route_statement()),
             TokenType::Try => Some(self.parse_try_statement()),
             TokenType::Spawn => Some(self.parse_expression_statement()),
-            TokenType::At => {
-                self.next_token();
-                if self.cur_token.literal == "memoize" {
-                    self.next_token();
-                    if self.cur_token_is(TokenType::Function) {
-                        Some(self.parse_function_definition(false, true))
-                    } else if self.cur_token_is(TokenType::Render) {
-                        Some(self.parse_function_definition(true, true))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => {
-                if self.peek_token_is(TokenType::LBrace) {
+            TokenType::Var => Some(self.parse_let_statement()),
+            TokenType::Ident => {
+                if self.peek_token_is(TokenType::LParen) {
+                    Some(self.parse_function_definition(false, false))
+                } else if self.peek_token_is(TokenType::LBrace) {
                     Some(self.parse_struct_definition())
                 } else {
                     Some(self.parse_expression_statement())
                 }
             }
+            _ => Some(self.parse_expression_statement()),
+        }?;
+
+        stmt.attributes.extend(attributes);
+        Some(stmt)
+    }
+
+    fn parse_attribute(&mut self) -> Option<crate::core::ast::Attribute> {
+        let start_span = self.cur_token.span.clone();
+        let is_hash = self.cur_token_is(TokenType::LBracketHash);
+        self.next_token(); // skip @ or #[
+        
+        let name = self.cur_token.literal.clone();
+        self.next_token();
+        
+        let mut arguments = Vec::new();
+        if self.cur_token_is(TokenType::LParen) {
+            self.next_token();
+            arguments = self.parse_expression_list(TokenType::RParen);
+            self.next_token();
         }
+        
+        if is_hash && self.cur_token_is(TokenType::RBracket) {
+            self.next_token();
+        }
+
+        Some(crate::core::ast::Attribute {
+            name,
+            arguments,
+            span: start_span.start..self.cur_token.span.end,
+        })
     }
 
     fn parse_function_definition(&mut self, is_render: bool, is_memoized: bool) -> Statement {
@@ -187,12 +212,19 @@ impl<'a> Parser<'a> {
         let old_render = self.is_render;
         self.is_render = is_render;
 
-        if is_render {
-            self.expect_peek(TokenType::Function);
+        if self.cur_token_is(TokenType::Function) {
+            self.next_token();
+        } else if is_render && self.cur_token_is(TokenType::Render) {
+            self.next_token();
+            if self.cur_token_is(TokenType::Function) {
+                self.next_token();
+            }
         }
 
-        self.expect_peek(TokenType::Ident);
         let name = self.cur_token.literal.clone();
+        if !self.cur_token_is(TokenType::Ident) {
+            // Error handling or skip
+        }
 
         self.expect_peek(TokenType::LParen);
         let parameters = self.parse_parameters();
@@ -223,12 +255,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let_statement(&mut self) -> Statement {
-        let start_span = self.cur_token.span.clone();
-        if self.peek_token_is(TokenType::Var) || self.peek_token_is(TokenType::Ident) {
+        if self.cur_token_is(TokenType::Let) {
             self.next_token();
-        } else {
-            self.expect_peek(TokenType::Var);
         }
+        
         let name = self.cur_token.literal.clone();
 
         let mut var_type = None;
@@ -455,11 +485,13 @@ impl<'a> Parser<'a> {
                 | TokenType::NotEq
                 | TokenType::And
                 | TokenType::Or
-                | TokenType::Arrow => {
+                | TokenType::DoubleArrow | TokenType::Dot => {
                     self.next_token();
                     left = self.parse_infix_expression(left);
                 }
-                TokenType::Dot | TokenType::Nullsafe => {
+                | TokenType::Arrow
+                | TokenType::Nullsafe
+                | TokenType::DoubleColon => {
                     self.next_token();
                     left = self.parse_method_call_expression(left);
                 }
@@ -474,7 +506,7 @@ impl<'a> Parser<'a> {
                         arguments,
                         ..
                     } if arguments.is_empty() => {
-                        let full_name = format!("{}.{}", self.get_expr_name(object), method);
+                        let full_name = format!("{}::{}", self.get_expr_name(object), method);
                         self.next_token();
                         left = self.parse_struct_literal_with_name(full_name, left.span.start);
                     }
@@ -610,16 +642,11 @@ impl<'a> Parser<'a> {
                                 let expr = self.parse_sql_query_expression(start_span.start);
                                 self.expect_peek(TokenType::RParen);
                                 return expr;
-                            }
-                        }
-                    }
-                }
-            }
-            let arguments = self.parse_expression_list(TokenType::RParen);
+            let arguments = self.parse_pixel_call_arguments();
             Expression {
                 kind: ExpressionKind::MethodCallExpression {
                     object: Box::new(object),
-                    method,
+                    method: if is_static { format!("::{}", method) } else { method },
                     arguments,
                     is_nullsafe,
                 },
@@ -629,12 +656,29 @@ impl<'a> Parser<'a> {
             Expression {
                 kind: ExpressionKind::MemberExpression {
                     object: Box::new(object),
-                    property: method,
+                    property: if is_static { format!("::{}", method) } else { method },
                     is_nullsafe,
                 },
                 span: start_span.start..self.cur_token.span.end,
             }
         }
+    }
+
+    fn parse_pixel_call_arguments(&mut self) -> Vec<Expression> {
+        let mut args = Vec::new();
+        if self.peek_token_is(TokenType::RParen) {
+            self.next_token();
+            return args;
+        }
+        self.next_token();
+        args.push(self.parse_expression(Precedence::Lowest));
+        while self.peek_token_is(TokenType::Comma) {
+            self.next_token();
+            self.next_token();
+            args.push(self.parse_expression(Precedence::Lowest));
+        }
+        self.expect_peek(TokenType::RParen);
+        args
     }
 
     fn parse_call_expression(&mut self, function: Expression) -> Expression {
@@ -810,7 +854,7 @@ impl<'a> Parser<'a> {
             return_type = Some(self.parse_type());
         }
 
-        self.expect_peek(TokenType::Arrow);
+        self.expect_peek(TokenType::DoubleArrow);
         self.next_token();
         let body = self.parse_expression(Precedence::Lowest);
 
@@ -849,7 +893,7 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            self.expect_peek(TokenType::Arrow);
+            self.expect_peek(TokenType::DoubleArrow);
             self.next_token();
             let result = self.parse_expression(Precedence::Lowest);
             arms.push(MatchArm {
@@ -884,10 +928,10 @@ impl<'a> Parser<'a> {
             },
             TokenType::Ident | TokenType::Var => {
                 let mut name = start_token.literal.clone();
-                while self.peek_token_is(TokenType::Dot) {
+                while self.peek_token_is(TokenType::DoubleColon) {
                     self.next_token();
                     self.expect_peek(TokenType::Ident);
-                    name.push('.');
+                    name.push_str("::");
                     name.push_str(&self.cur_token.literal);
                 }
                 if self.peek_token_is(TokenType::LBrace) {
@@ -1018,7 +1062,7 @@ impl<'a> Parser<'a> {
         match &expr.kind {
             ExpressionKind::Identifier(n) => n.clone(),
             ExpressionKind::MethodCallExpression { object, method, .. } => {
-                format!("{}.{}", self.get_expr_name(object), method)
+                format!("{}::{}", self.get_expr_name(object), method)
             }
             _ => "".into(),
         }
@@ -1029,7 +1073,7 @@ impl<'a> Parser<'a> {
         let precedence = Precedence::from(&self.cur_token.token_type);
         self.next_token();
 
-        let right = if self.cur_token_is(TokenType::Dot) {
+        let right = if self.cur_token_is(TokenType::Arrow) {
             self.next_token();
             let method = self.cur_token.literal.clone();
             if self.peek_token_is(TokenType::LParen) {
@@ -1155,10 +1199,10 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> String {
         let mut t = self.cur_token.literal.clone();
-        while self.peek_token_is(TokenType::Dot) {
+        while self.peek_token_is(TokenType::DoubleColon) {
             self.next_token();
             self.expect_peek(TokenType::Ident);
-            t.push_str(".");
+            t.push_str("::");
             t.push_str(&self.cur_token.literal);
         }
         if self.peek_token_is(TokenType::LBracket) {
@@ -1537,7 +1581,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        self.expect_peek(TokenType::Arrow);
+        self.expect_peek(TokenType::DoubleArrow);
         self.expect_peek(TokenType::LBrace);
 
         let body = self.parse_block_statement();

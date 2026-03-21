@@ -39,10 +39,10 @@
 
 Zenith aims to solve specific ergonomic and safety pain points through syntax-level integration:
 
-- **Simplified Concurrency**: Native `spawn` blocks that handle PHP Fibers automatically.
-- **Safe-by-default SQL**: Inline SQL queries that are validated and parameterized at compile-time.
+- **I/O Parallelism**: Native `spawn` blocks that handle PHP Fibers for fetching APIs or DB queries in parallel.
+- **Safe-by-default SQL**: Inline SQL queries that are validated against your schema at compile-time.
 - **Functional Ergonomics**: Native pipe operator `|>` and built-in memoization support.
-- **Static Analysis**: Built-in Zenith Analyzer for detecting common pitfalls like path traversal and SQL injection during development.
+- **Static Analysis**: Built-in Zenith Analyzer for detecting common pitfalls like path traversal and SQL injection. Use `#[Unsafe]` to bypass checks in performance-critical loops.
 
 ---
 
@@ -74,7 +74,7 @@ See full installer usage in [docs/installation.md](docs/installation.md).
 
 # License
 
-This project is licensed under the **GNU GPL v3 License**.
+This project is licensed under the **MIT License**.
 
 ---
 

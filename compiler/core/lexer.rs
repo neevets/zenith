@@ -167,8 +167,12 @@ pub enum TokenType {
     Sanitize,
     #[token("?->")]
     Nullsafe,
-    #[token("=>")]
+    #[token("->")]
     Arrow,
+    #[token("=>")]
+    DoubleArrow,
+    #[token("::")]
+    DoubleColon,
     #[token("&&")]
     And,
     #[token("||")]
