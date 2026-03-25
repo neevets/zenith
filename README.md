@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/zen-logo.png" width="200" alt="Zenith Logo" />
-
 <h1>
   <a href="https://zenithlang.xyz">Zenith</a>
 </h1>
